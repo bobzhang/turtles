@@ -35,6 +35,8 @@ jobs:
         run: moon check --target native --deny-warn
       - name: Unit tests
         run: moon test --target native
+      - name: Verify diff selection end to end
+        run: moon run scripts/verify-diff-selection.mbtx
       - name: Offline verification-profile adversarial tests
         run: python3 -m unittest discover -s scripts/tests -v
       - name: Run fixture baseline
@@ -56,7 +58,7 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as handle:
               report = json.load(handle)
 
-          assert report["schema"] == 3
+          assert report["schema"] == 4
           assert len(report["mutants"]) == 6
           assert any(
               mutant["original"] == "flag" and mutant["replacement"] == "true"
@@ -85,7 +87,7 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as handle:
               report = json.load(handle)
 
-          assert report["schema"] == 3
+          assert report["schema"] == 4
           assert len(report["mutants"]) == 4
           assert {m["group"] for m in report["mutants"]} == {"comparison"}
           assert report["summary"]["killed"] == 4
@@ -171,7 +173,7 @@ jobs:
               assert summary["survived"] == 3, summary
               assert summary["unviable"] == 0, summary
               assert summary["timeout"] == 0, summary
-              assert report["schema"] == 3
+              assert report["schema"] == 4
               assert all("group" in mutant for mutant in report["mutants"])
           sequential = [key(m) for m in reports[0]["mutants"]]
           concurrent = [key(m) for m in reports[1]["mutants"]]
@@ -212,7 +214,7 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as handle:
               report = json.load(handle)
 
-          assert report["schema"] == 3
+          assert report["schema"] == 4
           assert report["target"] == "native"
           assert report["inactive_mutants"] == 1
           assert report["inactive_files"] == ["js_only.mbt"]
@@ -382,7 +384,7 @@ jobs:
           for path in sys.argv[1:]:
               with open(path, encoding="utf-8") as handle:
                   report = json.load(handle)
-              assert report["schema"] == 3
+              assert report["schema"] == 4
               assert report["mutants"] == []
               assert report["summary"]["killed"] == 0
               assert report["summary"]["survived"] == 0
@@ -409,7 +411,7 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as handle:
               report = json.load(handle)
 
-          assert report["schema"] == 3
+          assert report["schema"] == 4
           assert len(report["mutants"]) == 1
           mutant = report["mutants"][0]
           assert (mutant["original"], mutant["replacement"], mutant["group"]) == (">=", "<", "comparison")
@@ -473,7 +475,7 @@ jobs:
           with open(sys.argv[1], encoding="utf-8") as handle:
               report = json.load(handle)
 
-          assert report["schema"] == 3
+          assert report["schema"] == 4
           assert report["turtles_version"] == sys.argv[2]
           assert len(report["mutants"]) == 6
           assert report["summary"]["killed"] == 6

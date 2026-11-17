@@ -274,4 +274,4 @@ jobs:
           printf '%s\n' 'pub fn plus(a : Int32, b : Int32) -> Int32 { a + b }' > plus.mbt
           printf '%s\n' 'test "plus" { inspect(plus(1, 2), content="3") }' > plus_test.mbt
           "$temp/bin/turtles" --dir . --timeout 60 --json "$temp/report.json"
-          jq -e --arg v "$version" '.schema == 3 and .turtles_version == $v and (.mutants | length) == 1 and .summary.killed == 1 and .summary.survived == 0 and .summary.timeout == 0 and .summary.unviable == 0' "$temp/report.json"
+          jq -e --arg v "$version" '.schema == 4 and .turtles_version == $v and (.mutants | length) == 1 and .summary.killed == 1 and .summary.survived == 0 and .summary.timeout == 0 and .summary.unviable == 0' "$temp/report.json"

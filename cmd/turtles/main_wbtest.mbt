@@ -40,6 +40,7 @@ async test "execute_with_config lists mutations or runs the pipeline" {
       fail_under: None,
       list: false,
       file_filter: None,
+      in_diff: None,
       json_report: Some(report),
       timeout_multiplier: None,
       iterate: false,

@@ -4,6 +4,8 @@
 
 ### Added
 
+- `--in-diff FILE` validates represented new-side unified diff lines and restricts mutations to intersecting byte spans. Diff runs report their partial selection and preserve the baseline and target filters.
+
 - Opt-in `boundary` operator group: `< -> <=`, `> -> >=`, `<= -> <`, and `>= -> >` mutants that only differ at the equality point. Enable it with `--operators boundary` or `operators = ["boundary"]` in `turtles.toml`; `comparison,boundary` generates both edits at each comparison. Reports keep `group: "boundary"`, and `--iterate` only reuses boundary rows whose identity matches.
 - `fixtures/boundary` plus `scripts/verify-boundary.mbtx`, exercised in CI, pin the group's observable behavior: a default run emits no boundary row.
 
@@ -20,6 +22,8 @@
 ### Security
 
 ### Migration
+
+- Reports now use schema 4 with explicit execution and selection metadata. `--iterate` does not reuse schema 3 reports; existing verdicts are classified again. The separate MoonBit verification profile remains pinned to its historical schema 3 executable.
 
 ## 0.4.7
 

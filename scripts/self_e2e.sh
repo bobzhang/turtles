@@ -2,7 +2,7 @@
 # turtles self-verification gate.
 #
 # Run the (possibly mutated) turtles binary against fixtures/basic and
-# check its schema-3 report through the standalone MoonBit validator.
+# check its schema-4 report through the standalone MoonBit validator.
 # The fixed fixture path prevents self-mutation from recursing into ".".
 #
 # Required on PATH: moon. No Python interpreter is needed.

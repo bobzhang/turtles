@@ -532,3 +532,36 @@ async test "dangling symlinks fail instead of being silently dropped" {
     assert_true(raised)
   })
 }
+
+///|
+async test "mutation discovery uses supplied snapshot bytes for represented sources" {
+  let root = @fs.tmpdir(prefix="turtles-discover-snapshot")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.write_file(path_join(root, "a.mbt"), "fn value() -> Bool { false }\n")
+    let snapshot : Map[String, Bytes] = {
+      "a.mbt": b"fn value() -> Bool { true }\n",
+    }
+    let found = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshot),
+    )
+    assert_eq(found.length(), 1)
+    assert_eq(found[0].original, "true")
+    @fs.remove(path_join(root, "a.mbt"))
+    let missing = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshot),
+    )
+    assert_eq(missing.length(), 1)
+    assert_eq(missing[0].original, "true")
+  })
+}

@@ -168,6 +168,10 @@ fn build_report(
   target~ : String? = None,
   inactive~ : Array[Mutation] = [],
   properties~ : Array[String]? = None,
+  run_id~ : String = "test-run",
+  discovered~ : Int32? = None,
+  diff_excluded~ : Int32 = 0,
+  diff_metadata~ : JsonDiffSelection? = None,
 ) -> JsonReport {
   let mutants : Array[JsonMutation] = []
   let mut reused = 0
@@ -184,7 +188,31 @@ fn build_report(
     skipped_files.push({ path: entry.path, error: entry.error, })
   }
   {
-    schema: 3,
+    schema: 4,
+    execution: "completed",
+    run_id,
+    diagnostics: Json::null(),
+    selection: {
+      version: 1,
+      scope: if diff_metadata is Some(_) {
+        "diff"
+      } else {
+        "configured"
+      },
+      discovered: discovered.unwrap_or(
+        results.length() + inactive.length() + diff_excluded,
+      ),
+      diff_excluded,
+      target_inactive: inactive.length(),
+      shard_excluded: 0,
+      selected: results.length(),
+      classified: results.length(),
+      diff: match diff_metadata {
+        Some(value) => @json.to_json(value)
+        None => Json::null()
+      },
+      shard: Json::null(),
+    },
     module_path: root,
     turtles_version,
     moon_version,
