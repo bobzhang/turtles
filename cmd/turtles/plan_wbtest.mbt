@@ -137,6 +137,44 @@ test "quoted sources remain active and malformed commands invalidate the plan" {
 }
 
 ///|
+async test "actual native dry run preserves spaced and nested source paths" {
+  let temp = @fs.tmpdir(prefix="turtles-plan")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(temp, recursive=true))
+    let root = path_join(temp, "module with spaces")
+    make_module_tree(root)
+    write_file(path_join(root, "plain.mbt"), "pub fn plain() -> Int { 1 }\n")
+    write_file(
+      path_join(root, "space name.mbt"),
+      "pub fn spaced() -> Int { 2 }\n",
+    )
+    let nested = path_join(root, "nested")
+    @fs.mkdir(nested, recursive=true)
+    write_file(path_join(nested, "moon.pkg"), "")
+    write_file(path_join(nested, "calc.mbt"), "pub fn calc() -> Int { 3 }\n")
+    let plan = load_moon_plan(root, target=Some("native"))
+    for path in ["plain.mbt", "space name.mbt", "nested/calc.mbt"] {
+      assert_true(
+        plan.active_sources.contains(path),
+        msg="inactive source: \{path}",
+      )
+    }
+    let dry_run = @fs.read_file(root + "-plan.log").text()
+    guard dry_run.contains("'./space name.mbt'") else {
+      fail("Moon dry-run no longer uses the expected shell quoting: \{dry_run}")
+    }
+    guard dry_run.contains("./nested/calc.mbt") else {
+      fail("Moon dry-run no longer normalizes nested paths: \{dry_run}")
+    }
+    match plan.test_plan {
+      Some(test_plan) =>
+        assert_eq(test_plan.package_dir_of("nested/calc.mbt"), Some("nested"))
+      None => fail("expected a usable plan from the native dry run")
+    }
+  })
+}
+
+///|
 test "record_line collects only leading positional sources" {
   let builder = PlanBuilder::new()
   builder.record_line(

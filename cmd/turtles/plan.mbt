@@ -20,6 +20,10 @@ struct TestPlan {
 }
 
 ///|
+/// The pinned Moon CLI normalizes dry-run path separators to `/` and emits
+/// Unix shell-quoted arguments on every platform, including Windows:
+/// https://github.com/moonbitlang/moon/blob/2284bd2268138444cd0f02376d5747b78c642561/crates/moonutil/src/path_normalizer.rs#L127-L185
+/// The integration test in plan_wbtest exercises this with the actual CLI.
 fn split_args(line : String) -> Array[String]? {
   let out : Array[String] = []
   let mut token = StringBuilder()
