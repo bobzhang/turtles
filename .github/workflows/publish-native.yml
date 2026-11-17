@@ -78,9 +78,7 @@ jobs:
           version: '0.10.16+b1a0e846e'
           core-version: '0.10.16+b1a0e846e'
       - name: Resolve dependencies
-        run: |
-          moon update
-          moon install
+        run: moon update
       - name: Build MoonBit native executable
         run: moon build cmd/turtles --target native --release
       - name: Verify Darwin runner architecture
