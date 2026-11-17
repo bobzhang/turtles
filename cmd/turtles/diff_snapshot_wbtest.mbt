@@ -74,3 +74,22 @@ async test "bounded diff reading accepts the limit and rejects excess" {
     )
   })
 }
+
+///|
+async test "source path components must use exact filesystem spelling" {
+  let root = @fs.tmpdir(prefix="turtles-diff-case")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.mkdir(path_join(root, "MixedDir"))
+    @fs.write_file(path_join(root, "MixedDir/Example.mbt"), "true\n")
+    assert_eq(read_diff_source(root, "MixedDir/Example.mbt"), Some(b"true\n"))
+    assert_true(
+      (Some(read_diff_source(root, "MixedDir/example.mbt")) catch { _ => None })
+      is None,
+    )
+    assert_true(
+      (Some(read_diff_source(root, "mixeddir/Example.mbt")) catch { _ => None })
+      is None,
+    )
+  })
+}
