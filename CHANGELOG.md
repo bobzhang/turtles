@@ -11,6 +11,8 @@
 
 ### Changed
 
+- CI and release jobs use the tested MoonBit 0.10.16 compiler and core, avoiding upstream formatter and lexer incompatibilities in newer floating toolchains.
+
 - An unset operator list now resolves through an exhaustive `operator_group_default_enabled`, so a new group is opt-in by explicit decision instead of by falling through a "not `Body`" test. Behavior is unchanged: `comparison`, `boolean`, `arithmetic`, `literal`, and `condition` run by default.
 
 ### Fixed

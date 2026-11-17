@@ -9,10 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install MoonBit
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Install tested MoonBit toolchain
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -431,10 +432,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = arm64
-      - name: Install MoonBit
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Install tested MoonBit toolchain
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -518,10 +520,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install MoonBit
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - name: Install tested MoonBit toolchain
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Update MoonBit registry
         run: moon update
       - name: Check standalone MoonBit validator formatting
@@ -586,6 +589,9 @@ jobs:
           }
           Write-Host 'Consumer gate environment: MSVC vctip helper unavailable; compiler and linker retained'
       - uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Verify Apple Silicon runner
         if: runner.os == 'macOS'
         shell: bash

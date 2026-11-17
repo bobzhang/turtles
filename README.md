@@ -52,6 +52,8 @@ turtles --dir .            # or: turtles --list to preview the mutation set
 
 Every mutant runs in its own temporary workspace; on a small module the whole run takes seconds.
 
+The examples below describe the unreleased development version: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. CI and release builds use MoonBit compiler/core `0.10.16+b1a0e846e`; newer toolchains can fail to build the pinned lexer dependency until it is updated.
+
 ## Typical local usage
 
 ```sh

@@ -74,6 +74,9 @@ jobs:
         if: startsWith(matrix.platform, 'windows-')
         uses: ilammy/msvc-dev-cmd@v1
       - uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Resolve dependencies
         run: |
           moon update
@@ -219,6 +222,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Validate registry package
         run: |
           moon update
