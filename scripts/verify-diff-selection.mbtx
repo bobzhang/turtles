@@ -113,6 +113,93 @@ fn verify_subset_matches(diff_report : Json, full_report : Json) -> Unit raise {
 }
 
 ///|
+/// Check the completed run against the list and the Git-generated sources.
+fn check_git_generated_report(report : Json, listing : String) -> Unit raise {
+  guard report
+    is {
+      "schema": Number(4.0, ..),
+      "execution": String("completed"),
+      "run_id": String(run_id),
+      "diagnostics": Null,
+      "target": String("native"),
+      "inactive_mutants": Number(0.0, ..),
+      "selection": {
+        "version": Number(1.0, ..),
+        "scope": String("diff"),
+        "discovered": Number(3.0, ..),
+        "diff_excluded": Number(0.0, ..),
+        "target_inactive": Number(0.0, ..),
+        "shard_excluded": Number(0.0, ..),
+        "selected": Number(3.0, ..),
+        "classified": Number(3.0, ..),
+        "diff": {
+          "fingerprint_algorithm": String("fnv1a64-v1"),
+          "fingerprint": String(fingerprint),
+          "validation": String("represented-new-side-v1"),
+          ..
+        },
+        "shard": Null,
+        ..
+      },
+      "summary": {
+        "killed": Number(3.0, ..),
+        "survived": Number(0.0, ..),
+        "timeout": Number(0.0, ..),
+        "unviable": Number(0.0, ..),
+        "reused": Number(0.0, ..),
+        "score": Number(100.0, ..),
+        ..
+      },
+      "mutants": Array(mutants),
+      ..
+    } else {
+    fail(
+      "Git-generated diff report has unexpected schema or selection metadata",
+    )
+  }
+  guard run_id != "" && fingerprint.length() == 16 && mutants.length() == 3 else {
+    fail("Git-generated diff report is incomplete")
+  }
+  let expected : Map[String, Bool] = {
+    "crlf.mbt": true,
+    "tail.mbt": true,
+    "new name あ.mbt": true,
+  }
+  let ids : Map[String, Bool] = Map([])
+  for mutant in mutants {
+    guard mutant
+      is {
+        "id": String(id),
+        "path": String(path),
+        "group": String("arithmetic"),
+        "original": String("+"),
+        "replacement": String("-"),
+        "outcome": String("KILLED"),
+        ..
+      } &&
+      expected.contains(path) &&
+      !ids.contains(id) &&
+      listing.contains("[" + id + "]") else {
+      fail("Git-generated diff report does not match the listed mutants")
+    }
+    expected.remove(path)
+    ids[id] = true
+  }
+  guard expected.is_empty() else {
+    fail("Git-generated diff report omitted a changed source")
+  }
+  let mut listed_count = 0
+  for line in listing.split("\n") {
+    if line.contains("[m-") {
+      listed_count = listed_count + 1
+    }
+  }
+  guard listed_count == mutants.length() else {
+    fail("Git-generated diff list and report contain different mutant sets")
+  }
+}
+
+///|
 /// Generate an actual Git patch rather than approximating Git's quoting,
 /// rename detection, binary format, and missing-final-newline markers.
 async fn git_checked(
@@ -178,6 +265,10 @@ async fn verify_git_generated_diffs(
   )
   @fs.write_file(join(repo, "moon.pkg"), "")
   @fs.write_file(
+    join(repo, "arithmetic_test.mbt"),
+    "test \"changed arithmetic\" {\n  inspect(crlf(5), content=\"6\")\n  inspect(tail(5), content=\"6\")\n  inspect(renamed(5), content=\"6\")\n}\n",
+  )
+  @fs.write_file(
     join(repo, "crlf.mbt"),
     "pub fn crlf(a : Int) -> Int {\r\n  a - 1\r\n}\r\n",
   )
@@ -237,9 +328,20 @@ async fn verify_git_generated_diffs(
     error,
   )
   let before = @fs.read_file(output).text()
+  let source_snapshots : Map[String, Bytes] = Map([])
+  for
+    name in [
+      "moon.mod", "moon.pkg", "arithmetic_test.mbt", "crlf.mbt", "tail.mbt", "new name あ.mbt",
+      "asset.bin",
+    ] {
+    source_snapshots[name] = @fs.read_file(join(repo, name)).binary()
+  }
   let listing = run_checked(
     executable,
-    ["--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--list"],
+    [
+      "--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--target",
+      "native", "--list",
+    ],
     log,
     0,
   )
@@ -258,6 +360,38 @@ async fn verify_git_generated_diffs(
   )
   guard @fs.read_file(output).text() == before else {
     fail("diff listing changed the Git fixture")
+  }
+  let run_output = join(temp, "git-generated-run")
+  let run_log = run_checked(
+    executable,
+    [
+      "--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--target",
+      "native", "--output-dir", run_output,
+    ],
+    log,
+    0,
+  )
+  guard run_log.contains("Baseline: ok") else {
+    fail("Git-generated diff classification skipped the baseline")
+  }
+  let report = @json.parse(
+    @fs.read_file(join(run_output, "report.json")).text(),
+  )
+  check_git_generated_report(report, listing)
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  guard @fs.read_file(output).text() == before else {
+    fail("diff classification changed the Git fixture status")
+  }
+  for name, expected in source_snapshots {
+    guard @fs.read_file(join(repo, name)).binary() == expected else {
+      fail("diff classification changed Git fixture file \{name}")
+    }
   }
 }
 

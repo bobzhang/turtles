@@ -107,11 +107,33 @@ test "an unresolved external import does not invalidate the plan" {
 }
 
 ///|
-test "split_args strips quotes and squeezes whitespace" {
+test "split_args parses shell-quoted dry-run arguments" {
   assert_eq(
     split_args("moonc build-package -i '$MOON_HOME/lib/m.mi:m'  -pkg x"),
-    ["moonc", "build-package", "-i", "$MOON_HOME/lib/m.mi:m", "-pkg", "x"],
+    Some(["moonc", "build-package", "-i", "$MOON_HOME/lib/m.mi:m", "-pkg", "x"]),
   )
+  assert_eq(
+    split_args(
+      "'./new name あ.mbt' './it'\\''s.mbt' \"./double space.mbt\" ./escaped\\ name.mbt",
+    ),
+    Some([
+      "./new name あ.mbt", "./it's.mbt", "./double space.mbt", "./escaped name.mbt",
+    ]),
+  )
+  assert_eq(split_args("'unterminated"), None)
+  assert_eq(split_args("trailing\\"), None)
+}
+
+///|
+test "quoted sources remain active and malformed commands invalidate the plan" {
+  let builder = PlanBuilder::new()
+  builder.record_line(
+    "moonc build-package './new name あ.mbt' -o ./_build/native/debug/test/m.core -pkg m -pkg-sources m:.",
+  )
+  assert_true(builder.active_sources("/mod").contains("new name あ.mbt"))
+  builder.record_line("moonc build-package 'unterminated.mbt")
+  assert_true(builder.malformed_command)
+  assert_true(builder.build() is None)
 }
 
 ///|
