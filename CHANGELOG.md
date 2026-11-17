@@ -23,6 +23,8 @@
 
 ### Security
 
+- Document that `--in-diff` path checks and reads are not atomic: concurrent symlink replacement can redirect a read even when later snapshot checks pass. Use a checkout protected from concurrent untrusted changes.
+
 ### Migration
 
 - Reports now use schema 4 with explicit execution and selection metadata. `--iterate` does not reuse schema 3 reports; existing verdicts are classified again. The separate MoonBit verification profile remains pinned to its historical schema 3 executable.

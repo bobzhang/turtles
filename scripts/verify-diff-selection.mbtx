@@ -113,6 +113,155 @@ fn verify_subset_matches(diff_report : Json, full_report : Json) -> Unit raise {
 }
 
 ///|
+/// Generate an actual Git patch rather than approximating Git's quoting,
+/// rename detection, binary format, and missing-final-newline markers.
+async fn git_checked(
+  repo : String,
+  hooks : String,
+  arguments : Array[String],
+  output_path : String,
+  error_path : String,
+) -> Unit {
+  let args = [
+    "-C",
+    repo,
+    "-c",
+    "core.autocrlf=false",
+    "-c",
+    "core.safecrlf=false",
+    "-c",
+    "core.quotepath=true",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "user.name=Turtles fixture",
+    "-c",
+    "user.email=turtles@example.invalid",
+    "-c",
+    "core.hooksPath=" + hooks,
+    "-c",
+    "core.excludesFile=" + join(hooks, "empty-excludes"),
+    "-c",
+    "core.attributesFile=" + join(hooks, "empty-attributes"),
+    "-c",
+    "init.templateDir=" + hooks,
+  ]
+  for argument in arguments {
+    args.push(argument)
+  }
+  let stdout = @process.redirect_to_file(output_path)
+  let stderr = @process.redirect_to_file(error_path)
+  let code = @process.run("git", args, stdout~, stderr~)
+  guard code == 0 else {
+    let error = @fs.read_file(error_path).text()
+    fail("git fixture command failed (\{code}): \{error}")
+  }
+}
+
+///|
+async fn verify_git_generated_diffs(
+  executable : String,
+  temp : String,
+  log : String,
+) -> Unit {
+  let repo = join(temp, "git-generated")
+  let hooks = join(temp, "empty-hooks")
+  let output = join(temp, "git-output")
+  let error = join(temp, "git-error")
+  let patch = join(temp, "git-generated.diff")
+  @fs.mkdir(repo)
+  @fs.mkdir(hooks)
+  git_checked(repo, hooks, ["init", "-q"], output, error)
+  @fs.write_file(
+    join(repo, "moon.mod"),
+    "name = \"fixture/git_diff\"\nversion = \"0.1.0\"\n",
+  )
+  @fs.write_file(join(repo, "moon.pkg"), "")
+  @fs.write_file(
+    join(repo, "crlf.mbt"),
+    "pub fn crlf(a : Int) -> Int {\r\n  a - 1\r\n}\r\n",
+  )
+  @fs.write_file(
+    join(repo, "tail.mbt"),
+    "pub fn tail(a : Int) -> Int { a - 1 }",
+  )
+  let common = "// unchanged line 01\n// unchanged line 02\n// unchanged line 03\n// unchanged line 04\n// unchanged line 05\n// unchanged line 06\n// unchanged line 07\n// unchanged line 08\n"
+  let old_name = join(repo, "old name.mbt")
+  let new_name = join(repo, "new name あ.mbt")
+  @fs.write_file(
+    old_name,
+    common + "pub fn renamed(a : Int) -> Int { a - 1 }\n",
+  )
+  @fs.write_file(join(repo, "asset.bin"), b"\x00old\xff")
+  git_checked(repo, hooks, ["add", "-A"], output, error)
+  git_checked(repo, hooks, ["commit", "-q", "-m", "fixture"], output, error)
+  @fs.write_file(
+    join(repo, "crlf.mbt"),
+    "pub fn crlf(a : Int) -> Int {\r\n  a + 1\r\n}\r\n",
+  )
+  @fs.write_file(
+    join(repo, "tail.mbt"),
+    "pub fn tail(a : Int) -> Int { a + 1 }",
+  )
+  @fs.rename(old_name, new_name)
+  @fs.write_file(
+    new_name,
+    common + "pub fn renamed(a : Int) -> Int { a + 1 }\n",
+  )
+  @fs.write_file(join(repo, "asset.bin"), b"\x00new\xfe")
+  git_checked(repo, hooks, ["add", "-A"], output, error)
+  git_checked(
+    repo,
+    hooks,
+    [
+      "diff", "--cached", "--relative", "--no-ext-diff", "--no-textconv", "--no-color",
+      "--binary", "--find-renames",
+    ],
+    patch,
+    error,
+  )
+  let text = @fs.read_file(patch).text()
+  guard text.contains("GIT binary patch") &&
+    text.contains("rename from old name.mbt") &&
+    text.contains("\\ No newline at end of file") &&
+    text.contains("+  a + 1\r\n") else {
+    fail(
+      "Git did not produce the requested binary, rename, CRLF, and no-newline cases",
+    )
+  }
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  let before = @fs.read_file(output).text()
+  let listing = run_checked(
+    executable,
+    ["--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--list"],
+    log,
+    0,
+  )
+  guard listing.contains("Found 3 mutation(s).") &&
+    listing.contains("crlf.mbt:2:") &&
+    listing.contains("tail.mbt:1:") &&
+    listing.contains("new name あ.mbt:") else {
+    fail("Git-generated diff selected an unexpected set: \{listing}")
+  }
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  guard @fs.read_file(output).text() == before else {
+    fail("diff listing changed the Git fixture")
+  }
+}
+
+///|
 async fn main {
   let cwd = @env.current_dir().unwrap()
   let args = @env.args()
@@ -275,6 +424,7 @@ async fn main {
       target_listing.contains(target_id) else {
       fail("target-aware selection counts or listing differ")
     }
+    verify_git_generated_diffs(executable, temp, log)
     println("Diff selection E2E passed")
   })
 }

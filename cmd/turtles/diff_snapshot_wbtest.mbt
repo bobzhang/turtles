@@ -93,3 +93,60 @@ async test "source path components must use exact filesystem spelling" {
     )
   })
 }
+
+///|
+/// These tests are deterministic witnesses for a documented limitation,
+/// not an assertion that the path-based check is safe against a concurrent
+/// untrusted writer. No timing-dependent scheduling or real user data is used.
+#cfg(not(platform="windows"))
+async test "a final-file swap between inspection and read can evade rechecking" {
+  let temp = @fs.tmpdir(prefix="turtles-diff-file-race")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(temp, recursive=true))
+    let root = path_join(temp, "module")
+    @fs.mkdir(root)
+    let source = path_join(root, "source.mbt")
+    let saved = path_join(root, "saved.mbt")
+    let outside = path_join(temp, "outside.mbt")
+    @fs.write_file(source, "same content\n")
+    @fs.write_file(outside, "same content\n")
+    let snapshots : Map[String, Bytes] = { "source.mbt": b"same content\n" }
+    let observed = read_diff_source_interposed(root, "source.mbt", () => {
+      @fs.rename(source, saved)
+      @fs.symlink(source, target=outside)
+      assert_true(@fs.kind(source, follow_symlink=false) is SymLink)
+    })
+    @fs.remove(source)
+    @fs.rename(saved, source)
+    assert_eq(observed, Some(b"same content\n"))
+    // The replacement was transient, so this check cannot reveal the read.
+    verify_diff_snapshots(root, snapshots)
+  })
+}
+
+///|
+#cfg(not(platform="windows"))
+async test "a parent-directory swap between inspection and read can evade rechecking" {
+  let temp = @fs.tmpdir(prefix="turtles-diff-parent-race")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(temp, recursive=true))
+    let root = path_join(temp, "module")
+    let parent = path_join(root, "src")
+    let saved = path_join(root, "saved")
+    let outside = path_join(temp, "outside")
+    @fs.mkdir(parent, recursive=true)
+    @fs.mkdir(outside)
+    @fs.write_file(path_join(parent, "source.mbt"), "same content\n")
+    @fs.write_file(path_join(outside, "source.mbt"), "same content\n")
+    let snapshots : Map[String, Bytes] = { "src/source.mbt": b"same content\n" }
+    let observed = read_diff_source_interposed(root, "src/source.mbt", () => {
+      @fs.rename(parent, saved)
+      @fs.symlink(parent, target=outside)
+      assert_true(@fs.kind(parent, follow_symlink=false) is SymLink)
+    })
+    @fs.remove(parent)
+    @fs.rename(saved, parent)
+    assert_eq(observed, Some(b"same content\n"))
+    verify_diff_snapshots(root, snapshots)
+  })
+}

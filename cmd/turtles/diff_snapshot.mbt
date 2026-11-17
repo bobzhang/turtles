@@ -1,8 +1,8 @@
 ///|
-/// Resolve a root-module source without following any symlink. Generated
-/// directories and nested modules follow the collector's exclusion rules.
-/// None means the source was intentionally excluded.
-async fn read_diff_source(root : String, path : String) -> Bytes? {
+/// Inspect a root-module source for symlinks and collector exclusions.
+/// This path-based check is not atomic with a later open; a concurrent writer
+/// can replace a checked file or directory before it is read.
+async fn inspect_diff_source(root : String, path : String) -> String? {
   validate_diff_path(path)
   let parts = path.split("/").collect()
   let mut current = root
@@ -59,9 +59,31 @@ async fn read_diff_source(root : String, path : String) -> Bytes? {
       }
     }
   }
-  Some(@fs.read_file(current).binary()) catch {
-    error => fail("diff source \{path}: cannot read source: \{error}")
+  Some(current)
+}
+
+///|
+/// The callback marks the boundary between inspection and use. Production
+/// passes a no-op; tests can deterministically place a concurrent change here.
+async fn read_diff_source_interposed(
+  root : String,
+  path : String,
+  before_read : async () -> Unit,
+) -> Bytes? {
+  match inspect_diff_source(root, path) {
+    Some(current) => {
+      before_read()
+      Some(@fs.read_file(current).binary()) catch {
+        error => fail("diff source \{path}: cannot read source: \{error}")
+      }
+    }
+    None => None
   }
+}
+
+///|
+async fn read_diff_source(root : String, path : String) -> Bytes? {
+  read_diff_source_interposed(root, path, () => ())
 }
 
 ///|
