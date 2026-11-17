@@ -9,10 +9,22 @@ async fn read_diff_source(root : String, path : String) -> Bytes? {
   let mut excluded : String? = None
   for i in 0..<parts.length() {
     let name = parts[i].to_owned()
+    let entries = @fs.readdir(current, include_hidden=true, sort=false) catch {
+      error =>
+        fail(
+          "diff source \{path}: cannot inspect directory \{current}: \{error}",
+        )
+    }
+    let exact_name = entries.contains(name)
     current = path_join(current, name)
     let kind = @fs.kind(current, follow_symlink=false) catch {
       @os_error.OSError(_) as error if error.is_ENOENT() => Unknown
       error => fail("diff source \{path}: cannot inspect \{current}: \{error}")
+    }
+    guard exact_name || kind is Unknown else {
+      fail(
+        "diff source \{path}: path spelling differs from the filesystem entry",
+      )
     }
     guard !(kind is SymLink) else {
       fail("diff source \{path}: symbolic links are not allowed")

@@ -7,6 +7,11 @@ async test "diff sources reject missing files and symlinks and verify snapshots"
     @fs.mkdir(path_join(root, "src"))
     @fs.write_file(path_join(root, "src/a.mbt"), "hello\n")
     assert_eq(read_diff_source(root, "src/a.mbt"), Some(b"hello\n"))
+    // On case-insensitive filesystems this spelling resolves to the same
+    // file, but it must not silently miss the collector's exact path.
+    assert_true(
+      (Some(read_diff_source(root, "src/A.mbt")) catch { _ => None }) is None,
+    )
     let snapshots : Map[String, Bytes] = { "src/a.mbt": b"hello\n" }
     verify_diff_snapshots(root, snapshots)
     @fs.write_file(path_join(root, "src/a.mbt"), "changed\n")
