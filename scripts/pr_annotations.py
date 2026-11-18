@@ -233,7 +233,9 @@ def verify_report(report, manifest):
             report.get("execution") == "completed" and
             "diagnostics" in report and report["diagnostics"] is None,
             "expected a completed schema-4 report with null diagnostics")
-    # MoonBit omits absent optional fields, including the default target.
+    # Schema 4 carries target explicitly: null identifies the default backend.
+    # Missing target cannot attest which backend produced these verdicts.
+    require("target" in report, "missing report target")
     for name in ("run_id", "module", "target", "test_scope"):
         require(report.get(name) == manifest[name], f"mismatched {name}")
     text_value(report.get("turtles_version"), "turtles version")

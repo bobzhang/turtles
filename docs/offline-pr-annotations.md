@@ -42,7 +42,7 @@ shows the exact JSON shape.
 | `exit_code` | Current turtles process status observed by the caller. Both `0` and `1` can represent a completed run. Setup or baseline failure yields `2`. Signals, cancellation, and budget interruption also invalidate the handoff. |
 | `run_id` | Producer-assigned ID from an independent trusted observation of the current invocation. |
 | `module`, `module_prefix` | Resolved module directory as reported by turtles, and its checked-out repository-relative prefix from the caller. Use an empty prefix for a root module. |
-| `target`, `test_scope` | Expected target (`null` for the default) and effective oracle scope (`module` or `affected`). |
+| `target`, `test_scope` | Expected target (required in both manifest and report, explicit `null` for the default; an omitted report target is rejected) and effective oracle scope (`module` or `affected`). |
 | `files` | Complete module-relative FNV-1a-64 fingerprint map of the expected source, tests, configuration and manifests, using the producer's file inventory rules. |
 | `selection` | Expected schema-4 version-1 diff selection object. Include the fingerprint of the exact raw diff bytes, validation dialect, and all counts. |
 | `selected_lines` | Independently expected mapping of every selected mutant ID to its one-based source line, from the same inputs and selection. `--in-diff … --list` exposes the active IDs and positions. |

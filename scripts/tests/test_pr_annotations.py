@@ -206,8 +206,8 @@ class AnnotationTests(unittest.TestCase):
         self.assertEqual(payload["selection"]["scope"], "diff")
         self.assertFalse(payload["summary"]["truncated"])
 
-    def test_default_target_omission_and_attributed_kill(self):
-        del self.report["target"]
+    def test_explicit_null_target_and_attributed_kill(self):
+        self.report["target"] = None
         self.manifest["target"] = None
         self.report["inactive_mutants"] = 0
         self.report["inactive_files"] = []
@@ -223,6 +223,11 @@ class AnnotationTests(unittest.TestCase):
         payload = generate.annotations(self.attest_test_bytes(), self.manifest, 10)
         self.assertIsNone(payload["target"])
         self.assertEqual(payload["summary"]["eligible"], 2)
+
+    def test_missing_target_is_not_an_explicit_default_target(self):
+        del self.report["target"]
+        self.manifest["target"] = None
+        self.assert_invalid_report("missing report target")
 
     def test_cli_errors_keep_stdout_empty(self):
         bad_inputs = (
