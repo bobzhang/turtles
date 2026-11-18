@@ -59,7 +59,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 ### D1: cache（独立issueで確定する契約）
 
 - [ ] Given test/source/manifest/config/toolchain/targetが変化、when依存が不明、then安全に全oracleへ戻る。単なるmutant元関数の同一性で他のtest変更を無視しない。
-- [ ] Given cold/unchanged/one-line change、when同一環境で3回ずつ実行、then reuse hit/miss・失効理由・wall time・プロセス起動数を記録する。
+- [ ] Given cold/unchanged/one-line change、when同一環境で3回ずつ実行、then reuse hit/miss・失効理由・wall time・プロセス起動数を記録する。revision Aでcacheを作成後、testまたは推移的依存だけを変更したrevision Bのwarm runを、同じBのcacheなしfull runと比較し、選択mutant ID集合・全件verdictの一致を要求する。
 - [ ] Given同一入力・同一選択オプションのcacheなしfullとcacheあり、when比較、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict不一致0件を確認する。共通部分だけの比較で欠落・ID変更を見逃さない。ハッシュのみを信頼境界にせず、衝突・破損・並行書込みを拒否または安全に再計算する。
 - [ ] 手法の比較（function graph、test graph、manifest依存）と観測不能な依存（FFI、環境、生成物）をissueに列挙する。未確認の速度改善を公称しない。
 
@@ -67,7 +67,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 
 - [ ] Moon公式のcoverage出力が**per-test attribution**を提供するか、集約されたline coverageのみか、実toolchain/targetで確認して証拠を残す。
 - [ ] Given test単位マップが欠落・古い・target不一致・動的経路不明、when選択、then広いtest planへ戻る。
-- [ ] Given被験moduleの小/大・public/white-box/property test、when同一入力・同一mutant選択オプションでfull test vs filtered test、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict一致・選択されたtest数・時間を記録する。testの絞り込みでmutantを欠落させず、共通部分だけでは比較しない。未到達判定にはcoverageの信頼度を添える。`--pbt-amplify`有効時のseed・trial変更で初めてkillする場合と、amplified pristine controlが失敗する場合もparity fixtureに含める。その解析フェーズでfilterの妥当性が検証されるまでは、amplificationのoracleを未フィルタのまま維持する。
+- [ ] Given被験moduleの小/大・public/white-box/property test、when同一入力・同一mutant選択オプションでfull test vs filtered test、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict一致・選択されたtest数・時間を記録する。testの絞り込みでmutantを欠落させず、共通部分だけでは比較しない。未到達判定にはcoverageの信頼度を添える。`--pbt-amplify`有効時のseed・trial変更で初めてkillする場合と、amplified pristine controlが失敗する場合もparity fixtureに含める。その解析フェーズでfilterの妥当性が検証されるまでは、amplificationのoracleを未フィルタのまま維持する。同一timeout設定でfullが`TIMEOUT`、filteredが`SURVIVED`/`KILLED`となるfixtureも含め、timeoutによるverdict差が生じる条件ではfiltered結果を同等とせずfull oracleへ戻る。
 - [ ] per-testが不可能なら**no-go**を記録し、無理なAST call graph選別を実装しない。
 
 ### D3: actionable findings
@@ -88,7 +88,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 
 | 指標 | 測り方 | 初期合格/判断 |
 | --- | --- | --- |
-| Correctness | 同一fixtureのfull/optimized共通mutant ID→verdict比較 | 不一致0。比較できない条件はno-evidenceと報告 |
+| Correctness | 同一fixtureでD0はdiff交差契約に基づく期待mutant ID集合との一致、同一選択scopeのD1/D2はfull/optimizedのID集合完全一致を検証後、対象全件のverdictを比較 | ID集合・verdictの不一致0。共通部分だけでは比較せず、比較できない条件はno-evidenceと報告 |
 | Performance | cold/warm/diff、各3試行、wall time・実行回数・cache失効理由 | 基準値を先に記録。改善目標は測定後に設定 |
 | Completeness | selected/classified/pending/skipped/inactiveと理由の収支 | 無理由の除外0。partialを全件と表示しない |
 | Actionability | 人手確認済み指摘のうち対処可能な件数、誤抑制・判断保留 | 分母・件数・基準を公開し、他社論文の数字を達成済みと扱わない |
