@@ -10,7 +10,28 @@ struct DiffSection {
 /// Split a textual unified patch into raw lines. CRLF patch framing is
 /// identified from its first line; CR belonging to source content remains
 /// available for new-side comparison.
-fn diff_patch_lines(raw : Bytes) -> Array[Bytes] {
+fn diff_patch_lines(
+  raw : Bytes,
+  line_limit~ : Int32 = 200000,
+) -> Array[Bytes] raise {
+  // Bound short-line object overhead before allocating any per-line copies.
+  // Count a final unterminated line, but not a phantom line after trailing LF.
+  let mut count = if raw.is_empty() || raw[raw.length() - 1] == b'\n' {
+    0
+  } else {
+    1
+  }
+  guard count <= line_limit else {
+    fail("diff exceeds \{line_limit} physical lines")
+  }
+  for byte in raw {
+    if byte == b'\n' {
+      count += 1
+      guard count <= line_limit else {
+        fail("diff exceeds \{line_limit} physical lines")
+      }
+    }
+  }
   let lines : Array[Bytes] = []
   let mut start = 0
   let mut framing_known = false
@@ -70,12 +91,12 @@ fn parse_unified_sections(raw : Bytes) -> Array[DiffSection] raise {
         error => fail("\{new_path}: hunk \{hunks.length() + 1}: \{error}")
       }
       if old_path == "/dev/null" {
-        guard hunk.old_count == 0 else {
+        guard hunk.old_start == 0 && hunk.old_count == 0 else {
           fail("new file hunk has old-side lines")
         }
       }
       if new_path == "/dev/null" {
-        guard hunk.new_count == 0 else {
+        guard hunk.new_start == 0 && hunk.new_count == 0 else {
           fail("deleted file hunk has new-side lines")
         }
       }

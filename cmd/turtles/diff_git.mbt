@@ -385,10 +385,12 @@ fn parse_git_diff_section(
     let (hunk, next) = parse_diff_hunk(lines, i, hunks.length() + 1) catch {
       error => fail("\{new_path}: hunk \{hunks.length() + 1}: \{error}")
     }
-    guard old_path != "/dev/null" || hunk.old_count == 0 else {
+    guard old_path != "/dev/null" ||
+      (hunk.old_start == 0 && hunk.old_count == 0) else {
       fail("new file hunk has old-side lines")
     }
-    guard new_path != "/dev/null" || hunk.new_count == 0 else {
+    guard new_path != "/dev/null" ||
+      (hunk.new_start == 0 && hunk.new_count == 0) else {
       fail("deleted file hunk has new-side lines")
     }
     hunks.push(hunk)

@@ -80,3 +80,38 @@ test "unterminated patch data cannot stand in for a newline marker" {
     1,
   )
 }
+
+///|
+test "patch physical line budget is checked before line copies" {
+  assert_eq(diff_patch_lines(b"a\nb\nc\n", line_limit=3), [b"a", b"b", b"c"])
+  assert_eq(diff_patch_lines(b"a\nb\nc", line_limit=3), [b"a", b"b", b"c"])
+  assert_eq(diff_patch_lines(b"", line_limit=0), [])
+  for raw in [b"a\nb\nc\nd", b"a\nb\nc\nd\n"] {
+    assert_true(
+      (Some(diff_patch_lines(raw, line_limit=3)) catch { _ => None }) is None,
+    )
+  }
+  assert_true(
+    (Some(diff_patch_lines(b"x", line_limit=0)) catch { _ => None }) is None,
+  )
+}
+
+///|
+test "absent sides require zero start as well as zero count in both formats" {
+  for
+    patch in [
+      b"--- /dev/null\n+++ b/a.mbt\n@@ -2,0 +3 @@\n+new\n", b"--- a/a.mbt\n+++ /dev/null\n@@ -3 +2,0 @@\n-old\n",
+    ] {
+    assert_true(
+      (Some(parse_unified_sections(patch)) catch { _ => None }) is None,
+    )
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+  for
+    patch in [
+      b"diff --git a/a.mbt b/a.mbt\nnew file mode 100644\n--- /dev/null\n+++ b/a.mbt\n@@ -2,0 +3 @@\n+new\n",
+      b"diff --git a/a.mbt b/a.mbt\ndeleted file mode 100644\n--- a/a.mbt\n+++ /dev/null\n@@ -3 +2,0 @@\n-old\n",
+    ] {
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+}
