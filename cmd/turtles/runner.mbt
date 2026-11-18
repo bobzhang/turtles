@@ -720,11 +720,13 @@ async fn run_one_mutant(
   let started = @async.now()
   // If classify raises, sweep best-effort before propagating so a failed
   // run cannot leave a mutated file for the next mutant.
-  errdefer ignore(
-    sweep_workspace(workspace, reference, manifest.val) catch {
-      _ => ()
-    },
-  )
+  errdefer @async.protect_from_cancel(() => {
+    ignore(
+      sweep_workspace(workspace, reference, manifest.val) catch {
+        _ => ()
+      },
+    )
+  })
   let (outcome, packages, kills) = classify(workspace, mutation)
   let duration_ms = @async.now() - started
   sweep_workspace(workspace, reference, manifest.val) catch {

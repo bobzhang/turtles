@@ -118,6 +118,7 @@ fn witness_appendix(
   helper : String,
   guard_name : String,
   witness_name : String,
+  quickcheck_alias~ : String = "quickcheck",
 ) -> String {
   let src_bytes = @utf8.encode(source)
   let clone = @utf8.decode_lossy(src_bytes[entry.impl_start:entry.name_start]) +
@@ -134,21 +135,204 @@ fn witness_appendix(
   buf.write_string(clone)
   buf.write_string("\n\n///|\ntest \"\{guard_name}\" {\n")
   buf.write_string(
-    "  @quickcheck.check((args : \{input_ty}) => {\n\{destructure}    \{orig_call} == \{orig_call}\n  })\n}\n",
+    "  @\{quickcheck_alias}.check((args : \{input_ty}) => {\n\{destructure}    \{orig_call} == \{orig_call}\n  })\n}\n",
   )
   buf.write_string("\n///|\ntest \"\{witness_name}\" {\n")
   buf.write_string(
-    "  @quickcheck.check((args : \{input_ty}) => {\n\{destructure}    \{mut_call} == \{orig_call}\n  })\n}\n",
+    "  @\{quickcheck_alias}.check((args : \{input_ty}) => {\n\{destructure}    \{mut_call} == \{orig_call}\n  })\n}\n",
   )
   buf.to_string()
 }
 
 ///|
-/// Insert `"moonbitlang/core/quickcheck"` into the package's regular
-/// imports when it is not already there (scoped `for "test"`/`"wbtest"`
-/// blocks do not cover a regular source file). Returns true when the
-/// manifest ends up with the import.
-async fn ensure_quickcheck_import(workspace : String, pkg_dir : String) -> Bool {
+fn pkg_quickcheck_alias(entries : Array[(String, String?)]) -> String? {
+  for (path, alias_) in entries {
+    if path == "moonbitlang/core/quickcheck" {
+      return Some(pkg_import_alias(path, alias_))
+    }
+  }
+  None
+}
+
+///|
+/// Three-valued evaluation is exclusive to QuickCheck lookup. Unknown targets
+/// or conditions must never be assumed inactive.
+fn quickcheck_condition_value(
+  condition : @moon_config.Condition,
+  target : String?,
+) -> Bool? {
+  match condition {
+    Bool(value) => Some(value)
+    Target("native" | "js" | "wasm" | "wasm-gc" | "llvm" as name) =>
+      match target {
+        Some("native" | "js" | "wasm" | "wasm-gc" | "llvm" as selected) =>
+          Some(name == selected)
+        _ => None
+      }
+    Target(_) => None
+    Not(inner) => quickcheck_condition_value(inner, target).map(value => !value)
+    All(items) => {
+      let mut unknown = false
+      for item in items {
+        match quickcheck_condition_value(item, target) {
+          Some(false) => return Some(false)
+          None => unknown = true
+          Some(true) => ()
+        }
+      }
+      if unknown {
+        None
+      } else {
+        Some(true)
+      }
+    }
+    Any(items) => {
+      let mut unknown = false
+      for item in items {
+        match quickcheck_condition_value(item, target) {
+          Some(true) => return Some(true)
+          None => unknown = true
+          Some(false) => ()
+        }
+      }
+      if unknown {
+        None
+      } else {
+        Some(false)
+      }
+    }
+  }
+}
+
+///|
+/// Unlike purity inference, QuickCheck binding needs no knowledge of unrelated
+/// imports. Remove conditional blocks only for this narrow lookup, then reject
+/// every possible conditional shadow of its package path or effective alias.
+fn pkg_text_quickcheck_resolution(
+  text : String,
+  scope : String,
+  target~ : String? = None,
+) -> (Bool, String?) {
+  let parsed = @moon_config.parse_moon_pkg(text)
+  if !parsed.diagnostics.errors.is_empty() {
+    return (true, None)
+  }
+  let unconditional : Array[@moon_config.Statement] = []
+  let conditional : Array[@moon_config.ImportItem] = []
+  for statement in parsed.ast.0 {
+    if statement
+      is @moon_config.Statement::Import(
+        items~,
+        kind~,
+        conditions~,
+        keyword_loc~,
+        list_loc~,
+        loc~,
+      ) {
+      let visible = match kind {
+        Normal => true
+        Test => scope == "test"
+        Wbtest => scope == "wbtest"
+      }
+      if visible && !conditions.is_empty() {
+        // Multiple cfg attributes are conjunctive. One definitely false
+        // attribute suffices; unknown attributes never do.
+        if conditions.any(condition => {
+            condition.parsed is Some(parsed) &&
+            quickcheck_condition_value(parsed, target) == Some(false)
+          }) {
+          continue
+        }
+        if conditions.all(condition => {
+            condition.parsed is Some(parsed) &&
+            quickcheck_condition_value(parsed, target) == Some(true)
+          }) {
+          // This normalization is local to QuickCheck lookup. The purity
+          // resolver still sees the original conditional statements.
+          unconditional.push(
+            @moon_config.Statement::Import(
+              items~,
+              kind~,
+              conditions=[],
+              keyword_loc~,
+              list_loc~,
+              loc~,
+            ),
+          )
+          continue
+        }
+        for item in items {
+          conditional.push(item)
+        }
+        continue
+      }
+    }
+    unconditional.push(statement)
+  }
+  guard pkg_quickcheck_alias(pkg_ast_import_entries(unconditional, scope))
+    is Some(alias_) else {
+    for item in conditional {
+      if item.path == "moonbitlang/core/quickcheck" ||
+        pkg_import_alias(item.path, item.alias_.map(pair => pair.0)) ==
+        "quickcheck" {
+        return (true, None)
+      }
+    }
+    return (false, None)
+  }
+  for item in conditional {
+    if item.path == "moonbitlang/core/quickcheck" ||
+      pkg_import_alias(item.path, item.alias_.map(pair => pair.0)) == alias_ {
+      return (true, None)
+    }
+  }
+  (true, Some(alias_))
+}
+
+///|
+fn pkg_text_quickcheck_alias(
+  text : String,
+  scope : String,
+  target~ : String? = None,
+) -> String? {
+  pkg_text_quickcheck_resolution(text, scope, target~).1
+}
+
+///|
+/// Resolve QuickCheck in the generated test file's compilation scope.
+/// Reuse scoped aliases when visible; otherwise add a regular source import
+/// and resolve again, including modern aliases retained by legacy lists.
+async fn ensure_quickcheck_import(
+  workspace : String,
+  pkg_dir : String,
+  scope~ : String = "source",
+  target~ : String? = None,
+) -> String? {
+  let alias_ = ensure_quickcheck_import_binding(
+    workspace,
+    pkg_dir,
+    scope~,
+    target~,
+  )
+  if scope == "test" {
+    let module_name = module_name_of(workspace)
+    if pkg_dir == "." && module_name is None {
+      return None
+    }
+    if alias_ == Some(pkg_self_alias(pkg_dir, module_name)) {
+      return None
+    }
+  }
+  alias_
+}
+
+///|
+async fn ensure_quickcheck_import_binding(
+  workspace : String,
+  pkg_dir : String,
+  scope~ : String = "source",
+  target~ : String? = None,
+) -> String? {
   let dir = if pkg_dir == "." {
     workspace
   } else {
@@ -157,75 +341,110 @@ async fn ensure_quickcheck_import(workspace : String, pkg_dir : String) -> Bool 
   let text_pkg = path_join(dir, "moon.pkg")
   let json_pkg = path_join(dir, "moon.pkg.json")
   if @fs.exists(text_pkg) {
-    let text = @fs.read_file(text_pkg).text() catch { _ => return false }
-    let blocks = pkg_import_blocks(text)
-    let mut has_regular = false
-    for (range, scoped) in blocks {
-      if scoped {
-        continue
+    let text = @fs.read_file(text_pkg).text() catch { _ => return None }
+    let parsed = @moon_config.parse_moon_pkg(text)
+    if !parsed.diagnostics.errors.is_empty() {
+      return None
+    }
+    let effective = pkg_text_import_entries(text, scope)
+    let (present_or_ambiguous, alias_) = pkg_text_quickcheck_resolution(
+      text,
+      scope,
+      target~,
+    )
+    if present_or_ambiguous {
+      return alias_
+    }
+    for (path, alias_) in effective {
+      if pkg_import_alias(path, alias_) == "quickcheck" {
+        return None
       }
-      has_regular = true
-      let (start, end) = range
-      for path in pkg_import_paths(text, start, end) {
-        if path == "moonbitlang/core/quickcheck" {
-          return true
+    }
+    let mut legacy : @moon_config.Expr? = None
+    for statement in parsed.ast.0 {
+      let fields = match statement {
+        @moon_config.Statement::Assign(field) => [field]
+        @moon_config.Statement::Expr(
+          @moon_config.Expr::Apply(name="options", args~, ..),
+        ) => args
+        _ => []
+      }
+      for field in fields {
+        if field.key == "import" {
+          if legacy is Some(_) {
+            return None
+          }
+          legacy = Some(field.value)
         }
       }
     }
-    let updated = if has_regular {
-      // splice the new path right after the first regular block's '{'
-      let tbytes = @utf8.encode(text)
-      let mut done = false
-      let buf = StringBuilder()
-      let mut cursor = 0
-      for (range, scoped) in blocks {
-        if !done && !scoped {
-          let (start, _) = range
-          buf.write_string(@utf8.decode_lossy(tbytes[cursor:start]))
-          buf.write_string("\n  \"moonbitlang/core/quickcheck\",")
-          cursor = start
-          done = true
+    if legacy is Some(value) {
+      guard pkg_legacy_import_entries(value) is Some(_) else { return None }
+      guard value is @moon_config.Expr::Array(loc~, ..) else { return None }
+      // The parser reports Unicode scalar offsets; String slices use UTF-16.
+      let mut start = 0
+      let mut scalars = 0
+      for ch in text.iter() {
+        if scalars == loc.start.cnum {
+          break
         }
+        start += ch.to_string().length()
+        scalars += 1
       }
-      buf.write_string(@utf8.decode_lossy(tbytes[cursor:]))
-      buf.to_string()
-    } else {
-      "\{text}\nimport {\n  \"moonbitlang/core/quickcheck\",\n}\n"
+      guard start >= 0 && start < text.length() && text[start] == '[' else {
+        return None
+      }
+      let updated = text[:start + 1].to_owned() +
+        "\n  \"moonbitlang/core/quickcheck\"," +
+        text[start + 1:].to_owned()
+      @fs.write_file(text_pkg, updated) catch {
+        _ => return None
+      }
+      return pkg_text_quickcheck_alias(updated, scope, target~)
     }
+    // Never splice into an existing block: it may carry a target condition.
+    // Latest Moon supports repeated blocks, so add an unconditional one.
+    let updated = "\{text}\nimport {\n  \"moonbitlang/core/quickcheck\",\n}\n"
     @fs.write_file(text_pkg, updated) catch {
-      _ => return false
+      _ => return None
     }
-    return true
+    return pkg_text_quickcheck_alias(updated, scope, target~)
   }
   if @fs.exists(json_pkg) {
-    let text = @fs.read_file(json_pkg).text() catch { _ => return false }
-    let json = @json.parse(text) catch { _ => return false }
-    guard json is Object(fields) else { return false }
+    let text = @fs.read_file(json_pkg).text() catch { _ => return None }
+    let json = @json.parse(text) catch { _ => return None }
+    guard json is Object(fields) else { return None }
     let entries = match fields.get("import") {
       Some(Array(entries)) => entries
-      Some(_) => return false
+      Some(_) => return None
       None => []
     }
-    for entry in entries {
-      match entry {
-        String(path) if path == "moonbitlang/core/quickcheck" => return true
-        Object(obj) =>
-          if json_field_string(obj, "path") ==
-            Some("moonbitlang/core/quickcheck") {
-            return true
-          }
-        _ => ()
+    let visible = pkg_json_import_entries(text, "import")
+    if scope != "source" {
+      for entry in pkg_json_import_entries(text, "\{scope}-import") {
+        visible.push(entry)
+      }
+    }
+    let effective = pkg_last_path_entries(visible)
+    for (path, alias_) in effective {
+      if path == "moonbitlang/core/quickcheck" {
+        return Some(pkg_import_alias(path, alias_))
+      }
+    }
+    for (path, alias_) in effective {
+      if pkg_import_alias(path, alias_) == "quickcheck" {
+        return None
       }
     }
     let updated = entries.copy()
     updated.push(Json("moonbitlang/core/quickcheck"))
     fields["import"] = Json::array(updated)
     @fs.write_file(json_pkg, json.stringify(indent=2)) catch {
-      _ => return false
+      _ => return None
     }
-    return true
+    return Some("quickcheck")
   }
-  false
+  None
 }
 
 ///|
@@ -313,14 +532,33 @@ async fn witness_one(
   let mutated = apply_mutation(source, result.mutation) catch {
     _ => return harness_error
   }
+  guard (ensure_quickcheck_import(
+      workspace,
+      entry.pkg,
+      target~,
+      scope=if entry.file.has_suffix("_wbtest.mbt") {
+        "wbtest"
+      } else if entry.file.has_suffix("_test.mbt") {
+        "test"
+      } else {
+        "source"
+      },
+    ) catch {
+      _ => None
+    })
+    is Some(quickcheck_alias) else {
+    return harness_error
+  }
   let appendix = witness_appendix(
-    entry, source, helper, guard_name, witness_name,
+    entry,
+    source,
+    helper,
+    guard_name,
+    witness_name,
+    quickcheck_alias~,
   )
   @fs.write_file(file_abs, mutated + appendix) catch {
     _ => return harness_error
-  }
-  if !(ensure_quickcheck_import(workspace, entry.pkg) catch { _ => false }) {
-    return harness_error
   }
   match
     run_moon_command(

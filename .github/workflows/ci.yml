@@ -9,11 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install tested MoonBit toolchain
+      - name: Install latest stable MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: '0.10.16+b1a0e846e'
-          core-version: '0.10.16+b1a0e846e'
+          version: 'latest'
+          core-version: 'latest'
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -354,24 +354,8 @@ jobs:
           "$bin/turtles" --version
           "$bin/turtles" --help
           "$bin/turtles" --dir fixtures/basic --list
-      - name: Smoke-test the published Mooncakes release
-        # The version in moon.mod may not be published yet (e.g. a release
-        # bump PR before `moon publish`). Skipping in that case keeps PR CI
-        # green without requiring a pre-merge registry publication; once the
-        # version exists, any CI run verifies the published artifact.
-        run: |
-          mod_version=$(sed -n 's/^version *= *"\(.*\)"/\1/p' moon.mod)
-          curl -fsSL "https://mooncakes.io/api/v0/modules/f4ah6o/turtles" \
-            -o "$RUNNER_TEMP/mooncakes.json"
-          if jq -e --arg v "$mod_version" \
-              '.versions[] | select(.version == $v and (.yanked | not))' \
-              "$RUNNER_TEMP/mooncakes.json" > /dev/null; then
-            bin="$RUNNER_TEMP/turtles-mooncakes-bin"
-            moon install "f4ah6o/turtles/cmd/turtles@$mod_version" --bin "$bin"
-            test "$("$bin/turtles" --version)" = "turtles $mod_version"
-          else
-            echo "f4ah6o/turtles@$mod_version is not published yet; skipping"
-          fi
+      # Historical registry releases are checked by published-cli-no-checkout
+      # with their compatible toolchain, not by this latest-source job.
       - name: Emit JSON report for empty candidate sets
         run: |
           report="$RUNNER_TEMP/turtles-empty-report.json"
@@ -432,11 +416,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = arm64
-      - name: Install tested MoonBit toolchain
+      - name: Install latest stable MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: '0.10.16+b1a0e846e'
-          core-version: '0.10.16+b1a0e846e'
+          version: 'latest'
+          core-version: 'latest'
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -495,9 +479,9 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: hustcer/setup-moonbit@v1
         with:
-          version: '0.10.16+b1a0e846e'
-          core-version: '0.10.16+b1a0e846e'
-      - name: Record pinned toolchain
+          version: 'latest'
+          core-version: 'latest'
+      - name: Record resolved toolchain
         run: moon version --all
       - name: Resolve dependencies
         run: moon update
@@ -520,11 +504,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install tested MoonBit toolchain
+      - name: Install latest stable MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: '0.10.16+b1a0e846e'
-          core-version: '0.10.16+b1a0e846e'
+          version: 'latest'
+          core-version: 'latest'
       - name: Update MoonBit registry
         run: moon update
       - name: Check standalone MoonBit validator formatting

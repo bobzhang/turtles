@@ -232,7 +232,7 @@ fn amplify_rewrite_file(
   // Apply left-to-right: sort by start ascending and reject any overlap.
   let edits = visitor.edits.edits
   edits.sort_by((a, b) => a.0 - b.0)
-  let buf = @buffer.Buffer(size_hint=bytes.length() + 256)
+  let buf = @buffer.Buffer(capacity=bytes.length() + 256)
   let mut cursor = 0
   for (start, end, text) in edits {
     if start < cursor || start > end || end > bytes.length() {

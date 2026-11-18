@@ -733,7 +733,7 @@ fn apply_mutation(source : String, mutation : Mutation) -> String raise {
     fail("source changed after mutation discovery")
   }
   let output = @buffer.Buffer(
-    size_hint=bytes.length() + mutation.replacement.length(),
+    capacity=bytes.length() + mutation.replacement.length(),
   )
   output.write_bytes(bytes[:mutation.start])
   output.write_string_utf8(mutation.replacement)

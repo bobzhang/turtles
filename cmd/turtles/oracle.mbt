@@ -2,12 +2,13 @@
 /// The kind of test a `moon test --test-failure-json` record describes.
 /// Order of checks in `test_kind` matters: a doc test that fails on a
 /// snapshot expectation is still a doc test.
+#derive(Eq, Debug, ToJson)
 enum TestKind {
   Property
   Snapshot
   DocTest
   Assertion
-} derive(Eq, Debug, ToJson)
+}
 
 ///|
 fn test_kind_name(kind : TestKind) -> String {
@@ -22,6 +23,7 @@ fn test_kind_name(kind : TestKind) -> String {
 ///|
 /// One failing test attributed to a mutant kill, parsed from a
 /// `--test-failure-json` line.
+#derive(Debug, ToJson(fields(pkg(rename="package"))))
 struct Kill {
   pkg : String
   filename : String
@@ -29,7 +31,7 @@ struct Kill {
   test_name : String
   kind : TestKind
   counterexample : String?
-} derive(Debug, ToJson(fields(pkg(rename="package"))))
+}
 
 ///|
 /// The oracle argv for every `moon test` turtles drives: baseline and
