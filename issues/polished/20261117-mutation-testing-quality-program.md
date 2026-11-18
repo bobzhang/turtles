@@ -59,7 +59,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 ### D1: cache（独立issueで確定する契約）
 
 - [ ] Given test/source/manifest/config/toolchain/targetが変化、when依存が不明、then安全に全oracleへ戻る。単なるmutant元関数の同一性で他のtest変更を無視しない。
-- [ ] Given cold/unchanged/one-line change、when同一環境で3回ずつ実行、then reuse hit/miss・失効理由・wall time・プロセス起動数を記録する。revision Aでcacheを作成後、testまたは推移的依存だけを変更したrevision Bのwarm runを、同じBのcacheなしfull runと比較し、選択mutant ID集合・全件verdictの一致を要求する。
+- [ ] Given cold/unchanged/one-line change、when同一環境で3回ずつ実行、then reuse hit/miss・失効理由・wall time・プロセス起動数を記録する。revision Aでcacheを作成後、testまたは推移的依存だけを変更したrevision Bのwarm runを、同じBのcacheなしfull runと比較し、選択mutant ID集合・全件verdictの一致を要求する。fixtureには、IDは不変だがAの再利用可能verdictとfresh Bのverdictが異なるmutantを少なくとも1件含め、warm Bがその古いentryを失効させfresh Bと一致することを検証する。
 - [ ] Given同一入力・同一選択オプションのcacheなしfullとcacheあり、when比較、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict不一致0件を確認する。共通部分だけの比較で欠落・ID変更を見逃さない。ハッシュのみを信頼境界にせず、衝突・破損・並行書込みを拒否または安全に再計算する。
 - [ ] 手法の比較（function graph、test graph、manifest依存）と観測不能な依存（FFI、環境、生成物）をissueに列挙する。未確認の速度改善を公称しない。
 
