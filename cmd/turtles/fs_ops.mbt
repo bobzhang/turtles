@@ -139,6 +139,29 @@ async fn collect_moonbit_files(
 }
 
 ///|
+/// Match sorted depth-first discovery: compare each directory entry name,
+/// rather than comparing the entire relative path as one string.
+fn compare_discovery_paths(left : String, right : String) -> Int32 {
+  let left_parts = left.split("/")
+  let right_parts = right.split("/")
+  while true {
+    match (left_parts.next(), right_parts.next()) {
+      (Some(a), Some(b)) => {
+        let order = a.to_owned().compare(b.to_owned())
+        if order != 0 {
+          return order
+        }
+      }
+      (None, None) => return 0
+      (None, Some(_)) => return -1
+      (Some(_), None) => return 1
+    }
+  } nobreak {
+    0
+  }
+}
+
+///|
 async fn discover_mutations(
   root : String,
   file_filter : String?,
@@ -176,7 +199,7 @@ async fn discover_mutations(
         }
       }
       if added {
-        files.sort()
+        files.sort_by(compare_discovery_paths)
       }
     }
     None => ()

@@ -232,9 +232,6 @@ fn diff_binary_header_matches(
   } else {
     let size = @utf8.encode(expected_old).length()
     positions.push(size)
-    if expected_old != "/dev/null" {
-      positions.push(size + 2)
-    }
   }
   let mut matches = 0
   for i in positions {
@@ -250,14 +247,7 @@ fn diff_binary_header_matches(
       _ => None
     }
     guard pair is Some((old_raw, new_raw)) else { continue }
-    let normalized = Some(diff_normalize_paths(old_raw, new_raw)) catch {
-      _ => None
-    }
-    if normalized == Some((expected_old, expected_new)) ||
-      (
-        normalized is Some(_) &&
-        (old_raw, new_raw) == (expected_old, expected_new)
-      ) {
+    if (old_raw, new_raw) == (expected_old, expected_new) {
       matches = matches + 1
     }
   }
@@ -299,15 +289,23 @@ fn diff_binary_records(lines : Array[Bytes], start : Int32) -> Int32 raise {
         fail("invalid binary patch payload width")
       }
       let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~"
-      for byte in payload[1:] {
-        let mut valid = false
-        for allowed in alphabet {
+      let mut value : UInt64 = 0
+      for index, byte in payload[1:] {
+        let mut digit = -1
+        for rank, allowed in alphabet {
           if byte == allowed {
-            valid = true
+            digit = rank
             break
           }
         }
-        guard valid else { fail("invalid binary patch base85 byte") }
+        guard digit >= 0 else { fail("invalid binary patch base85 byte") }
+        value = value * 85 + digit.to_uint64()
+        if index % 5 == 4 {
+          guard value <= 4294967295 else {
+            fail("binary patch base85 group overflows 32 bits")
+          }
+          value = 0
+        }
       }
       i = i + 1
     }
@@ -337,6 +335,7 @@ fn parse_git_diff_section(
   let mut has_headers = false
   let mut old_path = ""
   let mut new_path = ""
+  let mut section_paths : DiffGitPaths? = None
   if i < lines.length() && diff_starts(lines[i], b"--- ") {
     let old_raw = diff_header_path(lines[i][4:].to_owned())
     i = i + 1
@@ -371,18 +370,29 @@ fn parse_git_diff_section(
     }
     old_path = normalized.0
     new_path = normalized.1
-    ignore(diff_git_header_paths(git_paths, Some(old_path), Some(new_path)))
+    let paths = diff_git_header_identity(
+      git_paths,
+      Some(old_path),
+      Some(new_path),
+    )
+    guard (old_raw == "/dev/null" || old_raw == paths.raw_old) &&
+      (new_raw == "/dev/null" || new_raw == paths.raw_new) else {
+      fail("Git file headers disagree with section path prefixes")
+    }
+    section_paths = Some(paths)
     has_headers = true
     i = i + 1
   } else {
-    let pair = diff_git_header_paths(
+    let pair = diff_git_header_identity(
       git_paths,
       meta.rename_from,
       meta.rename_to,
     )
-    old_path = if meta.added { "/dev/null" } else { pair.0 }
-    new_path = if meta.deleted { "/dev/null" } else { pair.1 }
+    old_path = if meta.added { "/dev/null" } else { pair.old_path }
+    new_path = if meta.deleted { "/dev/null" } else { pair.new_path }
+    section_paths = Some(pair)
   }
+  let paths = section_paths.unwrap()
   guard meta.added == (old_path == "/dev/null") &&
     meta.deleted == (new_path == "/dev/null") else {
     fail("Git file mode conflicts with file headers")
@@ -431,7 +441,19 @@ fn parse_git_diff_section(
   let mut binary = false
   if i < lines.length() && diff_starts(lines[i], b"Binary files ") {
     guard hunks.is_empty() &&
-      diff_binary_header_matches(lines[i], old_path, new_path) else {
+      diff_binary_header_matches(
+        lines[i],
+        if meta.added {
+          "/dev/null"
+        } else {
+          paths.raw_old
+        },
+        if meta.deleted {
+          "/dev/null"
+        } else {
+          paths.raw_new
+        },
+      ) else {
       fail("binary file header conflicts with section")
     }
     binary = true

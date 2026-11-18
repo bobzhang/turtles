@@ -271,3 +271,41 @@ test "Git binary payload rejects truncated width and invalid alphabet" {
     assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
   }
 }
+
+///|
+test "Git text and binary headers must share section prefix interpretation" {
+  for
+    patch in [
+      b"diff --git calc.mbt calc.mbt\n--- a/calc.mbt\n+++ b/calc.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+      b"diff --git a/calc.mbt b/calc.mbt\n--- calc.mbt\n+++ calc.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+      b"diff --git calc.mbt calc.mbt\nnew file mode 100644\n--- /dev/null\n+++ b/calc.mbt\n@@ -0,0 +1 @@\n+new\n",
+      b"diff --git old.mbt new.mbt\nsimilarity index 80%\nrename from old.mbt\nrename to new.mbt\n--- a/old.mbt\n+++ b/new.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+      b"diff --git image.bin image.bin\nBinary files a/image.bin and b/image.bin differ\n",
+      b"diff --git a/image.bin b/image.bin\nBinary files image.bin and image.bin differ\n",
+    ] {
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+  for
+    patch in [
+      b"diff --git calc.mbt calc.mbt\n--- calc.mbt\n+++ calc.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+      b"diff --git a/calc.mbt b/calc.mbt\n--- a/calc.mbt\n+++ b/calc.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+      b"diff --git image.bin image.bin\nBinary files image.bin and image.bin differ\n",
+      b"diff --git a/image.bin b/image.bin\nBinary files a/image.bin and b/image.bin differ\n",
+    ] {
+    assert_eq(parse_diff_sections(patch).length(), 1)
+  }
+}
+
+///|
+test "binary base85 groups must fit an unsigned 32 bit word" {
+  for payload in ["A~~~~~", "A|NsC1", "E00000~~~~~"] {
+    let patch = @utf8.encode(
+      "diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\n" +
+      payload +
+      "\n\n",
+    )
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+  let valid = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\nA|NsC0\n\n"
+  assert_true(parse_diff_sections(valid)[0].binary)
+}
