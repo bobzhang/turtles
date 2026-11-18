@@ -944,9 +944,11 @@ async fn pkg_import_map(
   let self_alias = pkg_self_alias(dir, module_name)
   // Black-box tests implicitly import the package under its short name.
   // Explicit dependencies with that alias can bind differently in Moon;
-  // do not grant any purity/amplification permissions for an ambiguous scope.
+  // Withhold only the ambiguous alias; unrelated resolved bindings remain
+  // useful. Return before implicit self fallback can recreate the ambiguity.
   if scope == "test" && imports.get(self_alias) is Some(path) && path != dir {
-    return Map([])
+    imports.remove(self_alias)
+    return imports
   }
   if !imports.contains(self_alias) {
     imports[self_alias] = dir

@@ -1474,3 +1474,32 @@ async test "text manifest takes precedence over ignored JSON without invalid-tex
     assert_eq(unknown.get("index_wbtest"), None)
   })
 }
+
+///|
+async test "black-box self collision withholds only that alias" {
+  let root = @fs.tmpdir(prefix="turtles-partial-self")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.write_file(path_join(root, "moon.mod"), "name = \"review/math\"\n")
+    @fs.write_file(
+      path_join(root, "moon.pkg"),
+      "import { \"moonbitlang/core/math\", \"moonbitlang/core/quickcheck\" @active }\n",
+    )
+    for scope in ["source", "wbtest", "test"] {
+      let imports = pkg_import_map(
+        root,
+        ".",
+        Some("review/math"),
+        Map([]),
+        scope,
+      )
+      assert_eq(imports.get("active"), Some("moonbitlang/core/quickcheck"))
+      if scope == "test" {
+        assert_eq(imports.get("math"), None)
+      } else {
+        assert_eq(imports.get("math"), Some("moonbitlang/core/math"))
+      }
+    }
+    assert_eq(ensure_quickcheck_import(root, ".", scope="test"), Some("active"))
+  })
+}
