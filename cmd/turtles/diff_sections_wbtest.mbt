@@ -62,6 +62,7 @@ test "mixed Git and unified sections reject duplicates and unrecognized data" {
 test "Git binary payload remains opaque to UTF-8 decoding" {
   let raw = @buffer.Buffer()
   raw.write_bytes(b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\n")
+  raw.write_byte(b'A') // Git base85 length code; payload remains opaque.
   raw.write_byte(0xff)
   raw.write_bytes(b"\n\n")
   let sections = parse_diff_sections(raw.to_bytes())
