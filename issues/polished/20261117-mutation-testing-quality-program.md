@@ -60,19 +60,19 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 
 - [ ] Given test/source/manifest/config/toolchain/targetが変化、when依存が不明、then安全に全oracleへ戻る。単なるmutant元関数の同一性で他のtest変更を無視しない。
 - [ ] Given cold/unchanged/one-line change、when同一環境で3回ずつ実行、then reuse hit/miss・失効理由・wall time・プロセス起動数を記録する。
-- [ ] Given cacheなしfullとcacheあり、when共通候補を比較、thenID・verdict不一致0件。ハッシュのみを信頼境界にせず、衝突・破損・並行書込みを拒否または安全に再計算する。
+- [ ] Given同一入力・同一選択オプションのcacheなしfullとcacheあり、when比較、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict不一致0件を確認する。共通部分だけの比較で欠落・ID変更を見逃さない。ハッシュのみを信頼境界にせず、衝突・破損・並行書込みを拒否または安全に再計算する。
 - [ ] 手法の比較（function graph、test graph、manifest依存）と観測不能な依存（FFI、環境、生成物）をissueに列挙する。未確認の速度改善を公称しない。
 
 ### D2: coverage/test selection（先にspike）
 
 - [ ] Moon公式のcoverage出力が**per-test attribution**を提供するか、集約されたline coverageのみか、実toolchain/targetで確認して証拠を残す。
 - [ ] Given test単位マップが欠落・古い・target不一致・動的経路不明、when選択、then広いtest planへ戻る。
-- [ ] Given被験moduleの小/大・public/white-box/property test、when full test vs filtered test、then共通mutantのverdict一致・選択されたtest数・時間を記録する。未到達判定にはcoverageの信頼度を添える。
+- [ ] Given被験moduleの小/大・public/white-box/property test、when full test vs filtered test、then共通mutantのverdict一致・選択されたtest数・時間を記録する。未到達判定にはcoverageの信頼度を添える。`--pbt-amplify`有効時のseed・trial変更で初めてkillする場合と、amplified pristine controlが失敗する場合もparity fixtureに含める。その解析フェーズでfilterの妥当性が検証されるまでは、amplificationのoracleを未フィルタのまま維持する。
 - [ ] per-testが不可能なら**no-go**を記録し、無理なAST call graph選別を実装しない。
 
 ### D3: actionable findings
 
-- [ ] Given`SURVIVED`、when分類、then「未到達」「到達・未検出」「証拠不足」を分け、既存PBT witness・kill attributionを再利用する。実際に到達した証拠がない場合は未到達と断定しない。
+- [ ] Given`SURVIVED`、when分類、then「未到達」「到達・未検出」「証拠不足」を分け、評価したsuiteの入力・toolchain・targetに結び付いたcoverage等の到達性証拠とkill attributionを使う。生成PBT harnessのwitnessは追加テスト入力の提案であり、元suiteが変異式に到達した証拠にはしない。suiteのcoverageが不完全なら「証拠不足」とし、到達・未到達のどちらも断定しない。
 - [ ] Given arid/equivalent候補、whenaccept、then理由・reviewer・対象identity・影響するreport指標を記録し、未acceptのsurvivorを自動抑制しない。
 - [ ] Given無価値/有価値な代表mutant、when人手レビュー、then有用性ラベルの定義、評価件数、合意不一致、誤抑制率を公開し、調整可能にする。
 - [ ] コード削除・kill matrix・テスト簡素化は提案止まり。機械的なテスト削除や本体変更はこのprogramの副作用にしない。
