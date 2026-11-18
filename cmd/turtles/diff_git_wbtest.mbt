@@ -127,3 +127,37 @@ test "Git additions, deletions and mode-only sections keep their scope" {
   assert_true(mode_only.hunks.is_empty())
   assert_false(mode_only.binary)
 }
+
+///|
+test "prefixless Git additions and deletions retain literal prefix directories" {
+  let added = b"diff --git b/calc.mbt b/calc.mbt\nnew file mode 100644\nindex 0000000..abcdef0\n--- /dev/null\n+++ b/calc.mbt\n@@ -0,0 +1 @@\n+true\n"
+  let (addition, _) = parse_git_diff_section(diff_patch_lines(added), 0)
+  assert_eq((addition.old_path, addition.new_path), ("/dev/null", "b/calc.mbt"))
+  assert_eq(
+    validate_diff_hunks("patch", addition.new_path, b"true\n", addition.hunks).length(),
+    1,
+  )
+  let deleted = b"diff --git a/calc.mbt a/calc.mbt\ndeleted file mode 100644\nindex abcdef0..0000000\n--- a/calc.mbt\n+++ /dev/null\n@@ -1 +0,0 @@\n-true\n"
+  let (deletion, _) = parse_git_diff_section(diff_patch_lines(deleted), 0)
+  assert_eq((deletion.old_path, deletion.new_path), ("a/calc.mbt", "/dev/null"))
+}
+
+///|
+test "Git text hunks require file headers even when represented bytes match" {
+  let missing = b"diff --git a/calc.mbt b/calc.mbt\nindex 1234567..abcdef0 100644\n@@ -1 +1 @@\n-false\n+true\n"
+  assert_true((Some(parse_diff_sections(missing)) catch { _ => None }) is None)
+}
+
+///|
+test "overlapping binary summary markers are rejected without slicing abort" {
+  assert_false(
+    diff_binary_header_matches(b"Binary files differ", "x.bin", "x.bin"),
+  )
+  assert_false(
+    diff_binary_header_matches(b"Binary files  differ", "x.bin", "x.bin"),
+  )
+  let malformed = b"diff --git a/x.bin b/x.bin\nBinary files differ\n"
+  assert_true(
+    (Some(parse_diff_sections(malformed)) catch { _ => None }) is None,
+  )
+}
