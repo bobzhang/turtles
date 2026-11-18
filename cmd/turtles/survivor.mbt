@@ -714,8 +714,8 @@ fn pkg_import_paths(text : String, start : Int32, end : Int32) -> Array[String] 
 
 ///|
 /// Use Moon's manifest parser for import paths, aliases and scopes.
-/// This keeps comments, whitespace and repeated blocks from masquerading
-/// as imports. Malformed manifests grant no analysis permissions.
+/// This keeps comments and whitespace from masquerading as imports.
+/// Malformed manifests and conflicting aliases grant no analysis permissions.
 fn pkg_text_import_entries(
   text : String,
   scope : String,
@@ -729,14 +729,17 @@ fn pkg_text_import_entries(
   for statement in result.ast.0 {
     match statement {
       @moon_config.Statement::Import(items~, kind~, conditions~, ..) => {
-        // No target-condition context is available to this analysis.
-        if !conditions.is_empty() {
-          return []
-        }
         let key = match kind {
           Normal => "source"
           Test => "test"
           Wbtest => "wbtest"
+        }
+        if key != "source" && key != scope {
+          continue
+        }
+        // Unresolved conditions affect only the scopes that can see them.
+        if !conditions.is_empty() {
+          return []
         }
         let imports : Array[(String, String?)] = []
         for item in items {
@@ -761,6 +764,9 @@ fn pkg_text_import_entries(
             "wbtest-import" => "wbtest"
             _ => continue
           }
+          if key != "source" && key != scope {
+            continue
+          }
           guard pkg_legacy_import_entries(field.value) is Some(imports) else {
             return []
           }
@@ -770,17 +776,29 @@ fn pkg_text_import_entries(
     }
   }
   let entries : Array[(String, String?)] = []
-  let seen : Map[String, Bool] = Map([])
-  for (key, imports) in blocks {
-    // Keep fail-closed resolution across both modern and legacy blocks.
-    if seen.contains(key) {
-      return []
-    }
-    seen[key] = true
-    if key == "source" || key == scope {
-      for entry in imports {
-        entries.push(entry)
+  let bindings : Map[String, String] = Map([])
+  for (_, imports) in blocks {
+    for (path, alias_) in imports {
+      let name = match alias_ {
+        Some(name) => name
+        None =>
+          match path.rev_find("/") {
+            Some(slash) => path[slash + 1:].to_owned()
+            None => path
+          }
       }
+      match bindings.get(name) {
+        Some(previous) => {
+          if previous != path {
+            return []
+          }
+          // Repeating the same identity cannot change its purity or scope.
+          continue
+        }
+        None => ()
+      }
+      bindings[name] = path
+      entries.push((path, alias_))
     }
   }
   entries

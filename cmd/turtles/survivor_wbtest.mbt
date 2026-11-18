@@ -627,9 +627,12 @@ test "manifest comments and spaced scopes do not grant import identity" {
 }
 
 ///|
-test "malformed duplicate scope imports grant no analysis permissions" {
+test "distinct aliases in repeated scope imports retain identities" {
   let source = "import { \"moonbitlang/core/quickcheck\", } for \"test\"\nimport { \"unrelated/pkg\", } for \"test\"\n"
-  assert_true(pkg_text_import_entries(source, "test").is_empty())
+  assert_eq(pkg_text_import_entries(source, "test"), [
+    ("moonbitlang/core/quickcheck", None),
+    ("unrelated/pkg", None),
+  ])
 }
 
 ///|
@@ -743,10 +746,61 @@ test "legacy and modern import blocks reject duplicate or malformed identities" 
       "options(\"wbtest-import\": [\"unrelated/math\"])\nimport { \"moonbitlang/core/math\" } for \"wbtest\"",
       "options(\"import\": [42])", "options(\"import\": [{\"alias\": \"m\"}])", "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": 42}])",
       "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"path\": \"unrelated/math\"}])",
-      "options(\"import\": [\"moonbitlang/core/math\"])\n#cfg(false)\nimport { \"unrelated/math\" } for \"test\"",
     ] {
     for scope in ["source", "test", "wbtest"] {
       assert_true(pkg_text_import_entries(source, scope).is_empty())
     }
   }
+}
+
+///|
+async test "unrelated conditional imports and repeated blocks preserve source witnesses" {
+  let conditional =
+    #|import { "moonbitlang/core/math" @m }
+    #|#cfg(target = "js")
+    #|import { "unrelated/pkg" } for "test"
+  let repeated =
+    #|import { "moonbitlang/core/math" @m }
+    #|import { "moonbitlang/core/json" }
+  let mixed =
+    #|options("import": [{"path": "moonbitlang/core/math", "alias": "m"}])
+    #|import { "moonbitlang/core/json" }
+  assert_eq(pkg_text_import_entries(conditional, "source"), [
+    ("moonbitlang/core/math", Some("m")),
+  ])
+  assert_eq(pkg_text_import_entries(conditional, "wbtest"), [
+    ("moonbitlang/core/math", Some("m")),
+  ])
+  assert_true(pkg_text_import_entries(conditional, "test").is_empty())
+  let dir = @fs.tmpdir(prefix="turtles-import-scopes")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn pure_alias(x : Double) -> Double { @m.sin(x) }\n",
+    )
+    for manifest in [conditional, repeated, mixed] {
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let index = build_module_index(dir)
+      let entry = index.pkgs["."].fns["pure_alias"]
+      assert_false(entry.effects_unknown)
+      assert_true(witness_eligible(index, entry) is None)
+    }
+  })
+}
+
+///|
+test "conflicting visible aliases fail closed while identical bindings deduplicate" {
+  let conflict = "import { \"moonbitlang/core/math\" @m }\nimport { \"unrelated/math\" @m }"
+  assert_true(pkg_text_import_entries(conflict, "source").is_empty())
+  let scoped = "import { \"moonbitlang/core/math\" @m }\nimport { \"unrelated/math\" @m } for \"test\""
+  assert_eq(pkg_text_import_entries(scoped, "source"), [
+    ("moonbitlang/core/math", Some("m")),
+  ])
+  assert_true(pkg_text_import_entries(scoped, "test").is_empty())
+  let repeated = "import { \"moonbitlang/core/math\" }\nimport { \"moonbitlang/core/math\" @math }"
+  assert_eq(pkg_text_import_entries(repeated, "source"), [
+    ("moonbitlang/core/math", None),
+  ])
 }
