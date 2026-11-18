@@ -154,6 +154,11 @@ async fn discover_mutations(
   // that case; the caller supplies snapshots only for root-module files.
   match snapshot_sources {
     Some(sources) => {
+      // Keep discovery order in the array, but index membership once.
+      let discovered : Map[String, Bool] = Map([])
+      for relative in files {
+        discovered[relative] = true
+      }
       let mut added = false
       for relative, _ in sources {
         let name = @path.Path(relative).basename().to_owned()
@@ -164,8 +169,9 @@ async fn discover_mutations(
         if !is_test_source(name) &&
           project_config.path_enabled(relative) &&
           filter_matches &&
-          !files.contains(relative) {
+          !discovered.contains(relative) {
           files.push(relative)
+          discovered[relative] = true
           added = true
         }
       }
