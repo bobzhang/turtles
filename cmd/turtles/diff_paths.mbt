@@ -137,11 +137,11 @@ fn diff_normalize_paths(
 /// contain spaces, so examine every separator and require a unique pair that
 /// agrees with the file headers or rename metadata. When no hints exist (a
 /// mode-only or binary section), only an unchanged path pair is accepted.
-fn diff_git_header_paths(
+fn diff_git_header_identity(
   input : Bytes,
   old_hint : String?,
   new_hint : String?,
-) -> (String, String) raise {
+) -> DiffGitPaths raise {
   for byte in input {
     guard byte != b'\t' else { fail("tab in Git diff header") }
   }
@@ -205,7 +205,7 @@ fn diff_git_header_paths(
       }
     }
   }
-  let mut candidate : (String, String)? = None
+  let mut candidate : DiffGitPaths? = None
   for i in separators {
     if i <= 0 || i + 1 >= input.length() || input[i] != b' ' {
       continue
@@ -245,7 +245,13 @@ fn diff_git_header_paths(
       }
       if matches {
         guard candidate is None else { fail("ambiguous Git diff header paths") }
-        candidate = Some((old_path, new_path))
+        candidate = Some({
+          old_path,
+          new_path,
+          raw_old,
+          raw_new,
+          prefixed: (old_path, new_path) != (raw_old, raw_new),
+        })
       }
     }
   }
@@ -253,4 +259,23 @@ fn diff_git_header_paths(
     fail("Git diff header paths do not match section")
   }
   paths
+}
+
+///|
+struct DiffGitPaths {
+  old_path : String
+  new_path : String
+  raw_old : String
+  raw_new : String
+  prefixed : Bool
+}
+
+///|
+fn diff_git_header_paths(
+  input : Bytes,
+  old_hint : String?,
+  new_hint : String?,
+) -> (String, String) raise {
+  let paths = diff_git_header_identity(input, old_hint, new_hint)
+  (paths.old_path, paths.new_path)
 }

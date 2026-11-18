@@ -106,3 +106,21 @@ test "Git header candidate boundaries reject short and oversized hints" {
     ("same", "same"),
   )
 }
+
+///|
+test "Git path identity retains raw pair and section prefix mode" {
+  let prefixed = diff_git_header_identity(
+    b"a/file b/file",
+    Some("file"),
+    Some("file"),
+  )
+  assert_true(prefixed.prefixed)
+  assert_eq((prefixed.raw_old, prefixed.raw_new), ("a/file", "b/file"))
+  let literal = diff_git_header_identity(
+    b"a/file b/file",
+    Some("a/file"),
+    Some("b/file"),
+  )
+  assert_false(literal.prefixed)
+  assert_eq((literal.old_path, literal.new_path), ("a/file", "b/file"))
+}
