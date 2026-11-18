@@ -286,6 +286,12 @@ fn diff_binary_records(lines : Array[Bytes], start : Int32) -> Int32 raise {
       guard !diff_starts(lines[i], b"diff --git ") else {
         fail("unterminated binary patch record")
       }
+      // Git base85 payload lines begin with an alphabetic length code.
+      // In particular, never swallow a prefixless unified section as payload.
+      let first = lines[i][0]
+      guard (first >= b'A' && first <= b'Z') || (first >= b'a' && first <= b'z') else {
+        fail("invalid binary patch payload framing")
+      }
       i = i + 1
     }
     guard i > first_payload && i < lines.length() else {
@@ -458,7 +464,7 @@ fn parse_git_diff_section(
 
 ///|
 fn diff_empty_blob(oid : String) -> Bool {
-  oid.length() >= 7 &&
+  oid.length() >= 4 &&
   (
     "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391".has_prefix(oid) ||
     "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813".has_prefix(

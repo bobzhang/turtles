@@ -232,3 +232,30 @@ test "Git differing index blobs require content even with mode or rename metadat
   let (section, _) = parse_git_diff_section(diff_patch_lines(patch), 0)
   assert_eq(section.hunks.length(), 1)
 }
+
+///|
+test "binary payload cannot swallow prefixless unified source changes" {
+  let patch = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nabc\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n\n"
+  assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  let valid = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nabc\n\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n"
+  let sections = parse_diff_sections(valid)
+  assert_eq(sections.length(), 2)
+  assert_eq(sections[1].hunks.length(), 1)
+}
+
+///|
+test "empty blob accepts index abbreviations including core abbrev five" {
+  for oid in ["e69d", "e69de", "e69de29", "473a", "473a0"] {
+    assert_true(diff_empty_blob(oid))
+  }
+  assert_false(diff_empty_blob("e69"))
+  assert_false(diff_empty_blob("abcdef0"))
+  for
+    patch in [
+      b"diff --git a/a.mbt b/a.mbt\nnew file mode 100644\nindex 00000..e69de\n",
+      b"diff --git a/a.mbt b/a.mbt\ndeleted file mode 100644\nindex e69de..00000\n",
+    ] {
+    let (section, _) = parse_git_diff_section(diff_patch_lines(patch), 0)
+    assert_true(section.hunks.is_empty())
+  }
+}
