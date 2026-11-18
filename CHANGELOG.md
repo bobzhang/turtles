@@ -4,6 +4,22 @@
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+### Migration
+
+## 0.5.0 - 2026-11-18
+
+### Added
+
 - `--in-diff FILE` validates represented new-side unified diff lines and restricts mutations to intersecting byte spans. Diff runs report their partial selection and preserve the baseline and target filters.
 
 - Opt-in `boundary` operator group: `< -> <=`, `> -> >=`, `<= -> <`, and `>= -> >` mutants that only differ at the equality point. Enable it with `--operators boundary` or `operators = ["boundary"]` in `turtles.toml`; `comparison,boundary` generates both edits at each comparison. Reports keep `group: "boundary"`, and `--iterate` only reuses boundary rows whose identity matches.
@@ -17,16 +33,17 @@
 
 ### Fixed
 
-### Deprecated
-
-### Removed
+- Preserve effective import aliases across supported modern and legacy manifests for survivor analysis and QuickCheck harnesses. Unresolved bindings fail closed rather than being inferred as pure local calls.
 
 ### Security
 
+- Bound diff input to 64 MiB and 200,000 physical lines, validate paths and represented source content, and reject malformed or stale patches before baseline execution.
 - Document that `--in-diff` path checks and reads are not atomic: concurrent symlink replacement can redirect a read even when later snapshot checks pass. Use a checkout protected from concurrent untrusted changes.
 
 ### Migration
 
+- Use the latest stable MoonBit toolchain for 0.5.0; the older compiler pin used to install historical 0.4.7 is not the source-build baseline.
+- Conditional imports remain conservative for purity inference (`effects-unknown`). Source tests recompiled with incompatible white-box import aliases can report `harness-error`; neither outcome is a successful witness.
 - Reports now use schema 4 with explicit execution and selection metadata. `--iterate` does not reuse schema 3 reports; existing verdicts are classified again. The separate MoonBit verification profile remains pinned to its historical schema 3 executable.
 
 ## 0.4.7
