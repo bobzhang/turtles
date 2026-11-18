@@ -2,18 +2,33 @@
 /// Inspect a root-module source for symlinks and collector exclusions.
 /// This path-based check is not atomic with a later open; a concurrent writer
 /// can replace a checked file or directory before it is read.
-async fn inspect_diff_source(root : String, path : String) -> String? {
+async fn inspect_diff_source(
+  root : String,
+  path : String,
+  directory_entries~ : Map[String, Map[String, Unit]] = Map([]),
+) -> String? {
   validate_diff_path(path)
   let parts = path.split("/").collect()
   let mut current = root
   let mut excluded : String? = None
   for i in 0..<parts.length() {
     let name = parts[i].to_owned()
-    let entries = @fs.readdir(current, include_hidden=true, sort=false) catch {
-      error =>
-        fail(
-          "diff source \{path}: cannot inspect directory \{current}: \{error}",
-        )
+    let entries = match directory_entries.get(current) {
+      Some(entries) => entries
+      None => {
+        let names = @fs.readdir(current, include_hidden=true, sort=false) catch {
+          error =>
+            fail(
+              "diff source \{path}: cannot inspect directory \{current}: \{error}",
+            )
+        }
+        let entries : Map[String, Unit] = Map([])
+        for name in names {
+          entries[name] = ()
+        }
+        directory_entries[current] = entries
+        entries
+      }
     }
     let exact_name = entries.contains(name)
     current = path_join(current, name)
@@ -69,8 +84,9 @@ async fn read_diff_source_interposed(
   root : String,
   path : String,
   before_read : async () -> Unit,
+  directory_entries~ : Map[String, Map[String, Unit]] = Map([]),
 ) -> Bytes? {
-  match inspect_diff_source(root, path) {
+  match inspect_diff_source(root, path, directory_entries~) {
     Some(current) => {
       before_read()
       Some(@fs.read_file(current).binary()) catch {
@@ -82,8 +98,12 @@ async fn read_diff_source_interposed(
 }
 
 ///|
-async fn read_diff_source(root : String, path : String) -> Bytes? {
-  read_diff_source_interposed(root, path, () => ())
+async fn read_diff_source(
+  root : String,
+  path : String,
+  directory_entries~ : Map[String, Map[String, Unit]] = Map([]),
+) -> Bytes? {
+  read_diff_source_interposed(root, path, () => (), directory_entries~)
 }
 
 ///|
@@ -93,8 +113,11 @@ async fn verify_diff_snapshots(
   root : String,
   snapshots : Map[String, Bytes],
 ) -> Unit {
+  // One cache per pass, never reused across source/reference revalidation.
+  let directory_entries : Map[String, Map[String, Unit]] = Map([])
   for path, expected in snapshots {
-    guard read_diff_source(root, path) is Some(observed) && observed == expected else {
+    guard read_diff_source(root, path, directory_entries~) is Some(observed) &&
+      observed == expected else {
       fail("diff source \{path}: source changed after validation")
     }
   }

@@ -134,6 +134,7 @@ async fn prepare_diff_inputs(
 ) -> DiffInputs {
   let ranges : Map[String, Array[DiffByteRange]] = Map([])
   let snapshots : Map[String, Bytes] = Map([])
+  let directory_entries : Map[String, Map[String, Unit]] = Map([])
   for section in sections {
     let path = section.new_path
     if section.binary {
@@ -147,7 +148,7 @@ async fn prepare_diff_inputs(
     if !path.has_suffix(".mbt") {
       continue
     }
-    match read_diff_source(root, path) {
+    match read_diff_source(root, path, directory_entries~) {
       None => ()
       Some(source) => {
         for byte in source {

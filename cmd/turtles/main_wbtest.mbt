@@ -134,3 +134,23 @@ async test "diff listing rechecks live source after target planning" {
     )
   })
 }
+
+///|
+#cfg(not(platform="windows"))
+async test "untargeted empty diff listing does not copy excluded nested module" {
+  let root = @fs.tmpdir(prefix="turtles-empty-diff-list")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    write_order_fixture(root)
+    @fs.mkdir(path_join(root, "nested"))
+    @fs.write_file(
+      path_join(root, "nested/moon.mod"),
+      "name = \"test/nested\"\n",
+    )
+    @fs.symlink(
+      path_join(root, "nested/broken"),
+      target=path_join(root, "absent"),
+    )
+    print_mutation_list(root, [], [], None, diff_snapshots=Some(Map([])))
+  })
+}
