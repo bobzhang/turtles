@@ -160,12 +160,20 @@ async fn prepare_diff_inputs(
             _ => fail("diff source \{path}: source is not UTF-8")
           },
         )
-        ranges[path] = validate_diff_hunks(
+        let selected_ranges = validate_diff_hunks(
           diff_file,
           path,
           source,
           section.hunks,
         )
+        if section.old_path == "/dev/null" && !source.is_empty() {
+          guard selected_ranges.length() == 1 &&
+            selected_ranges[0].start == 0 &&
+            selected_ranges[0].end == source.length() else {
+            fail("diff source \{path}: added file is not fully represented")
+          }
+        }
+        ranges[path] = selected_ranges
         snapshots[path] = source
       }
     }

@@ -122,6 +122,26 @@ async fn print_mutation_list(
   target : String?,
   diff_snapshots~ : Map[String, Bytes]? = None,
 ) -> Unit {
+  print_mutation_list_interposed(
+    root,
+    mutations,
+    skipped_blocks,
+    target,
+    () => (),
+    diff_snapshots~,
+  )
+}
+
+///|
+/// The callback lets tests deterministically model an edit during planning.
+async fn print_mutation_list_interposed(
+  root : String,
+  mutations : Array[Mutation],
+  skipped_blocks : Array[SkippedBlock],
+  target : String?,
+  after_plan : async () -> Unit,
+  diff_snapshots~ : Map[String, Bytes]? = None,
+) -> Unit {
   match diff_snapshots {
     Some(snapshots) => verify_diff_snapshots(root, snapshots)
     None => ()
@@ -153,6 +173,11 @@ async fn print_mutation_list(
       }
       None => (mutations, [])
     }
+  }
+  after_plan()
+  match diff_snapshots {
+    Some(snapshots) => verify_diff_snapshots(root, snapshots)
+    None => ()
   }
   for mutation in listed {
     if diff_snapshots is Some(_) {

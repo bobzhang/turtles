@@ -101,3 +101,36 @@ test "describe_result renders outcome, edit, and group" {
     content="SURVIVED m.mbt:1:1: a -> b [comparison]",
   )
 }
+
+///|
+async test "diff listing rechecks live source after target planning" {
+  let root = @fs.tmpdir(prefix="turtles-list-snapshot")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    write_order_fixture(root)
+    let file = path_join(root, "order.mbt")
+    let original = @fs.read_file(file).binary()
+    let snapshots : Map[String, Bytes] = { "order.mbt": original }
+    let result = Some(
+      print_mutation_list_interposed(
+        root,
+        [],
+        [],
+        Some("native"),
+        () => @fs.write_file(file, "changed after planning\n"),
+        diff_snapshots=Some(snapshots),
+      ),
+    ) catch {
+      _ => None
+    }
+    assert_true(result is None)
+    @fs.write_file(file, original)
+    print_mutation_list(
+      root,
+      [],
+      [],
+      Some("native"),
+      diff_snapshots=Some(snapshots),
+    )
+  })
+}

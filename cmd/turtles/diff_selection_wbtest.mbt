@@ -205,3 +205,34 @@ async test "represented MoonBit source containing NUL is rejected" {
     )
   })
 }
+
+///|
+async test "added sources require complete content while empty additions stay valid" {
+  let root = @fs.tmpdir(prefix="turtles-added-source")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    let file = path_join(root, "new.mbt")
+    let header = b"diff --git a/new.mbt b/new.mbt\nnew file mode 100644\nindex 0000000..abcdef0\n"
+    let truncated = parse_diff_sections(header)
+    @fs.write_file(file, "one\ntwo\n")
+    assert_true(
+      (Some(prepare_diff_inputs(root, "patch", truncated)) catch { _ => None })
+      is None,
+    )
+    let partial = parse_diff_sections(
+      b"--- /dev/null\n+++ b/new.mbt\n@@ -0,0 +1 @@\n+one\n",
+    )
+    assert_true(
+      (Some(prepare_diff_inputs(root, "patch", partial)) catch { _ => None })
+      is None,
+    )
+    let complete = parse_diff_sections(
+      b"--- /dev/null\n+++ b/new.mbt\n@@ -0,0 +1,2 @@\n+one\n+two\n",
+    )
+    let selected = prepare_diff_inputs(root, "patch", complete)
+    assert_eq(selected.ranges["new.mbt"][0].end, 8)
+    @fs.write_file(file, "")
+    let empty = prepare_diff_inputs(root, "patch", truncated)
+    assert_true(empty.ranges["new.mbt"].is_empty())
+  })
+}
