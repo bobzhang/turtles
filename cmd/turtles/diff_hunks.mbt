@@ -94,6 +94,9 @@ fn parse_diff_hunk(
     let line = input[i]
     if line == b"\\ No newline at end of file" {
       guard previous != 0 else { fail("misplaced no-newline marker") }
+      guard input[i - 1].length() > 1 else {
+        fail("no-newline marker cannot describe a zero-byte line")
+      }
       if previous == b'-' || previous == b' ' {
         old_ended = true
       }

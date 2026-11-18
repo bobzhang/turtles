@@ -121,3 +121,28 @@ test "zero-count hunks cannot skip beyond a declared old or new EOF" {
   )
   assert_eq(deletion[0].hunks.length(), 2)
 }
+
+///|
+test "EOF markers cannot turn prefix-only hunk lines into zero-byte lines" {
+  for
+    input in [
+      [b"@@ -1 +1 @@", b"-", b"\\ No newline at end of file", b"+new"],
+      [b"@@ -1 +1 @@", b"-old", b"+", b"\\ No newline at end of file"],
+      [
+        b"@@ -1,2 +1,2 @@", b"-old", b"+new", b" ", b"\\ No newline at end of file",
+      ],
+    ] {
+    assert_true(
+      (Some(parse_diff_hunk(input, 0, 1)) catch { _ => None }) is None,
+    )
+  }
+  // An empty line with a newline is real, as is a nonempty final line.
+  let (empty, _) = parse_diff_hunk([b"@@ -1 +1 @@", b"-", b"+new"], 0, 1)
+  assert_false(empty.old_unterminated)
+  let (nonempty, _) = parse_diff_hunk(
+    [b"@@ -1 +1 @@", b"-old", b"\\ No newline at end of file", b"+new"],
+    0,
+    1,
+  )
+  assert_true(nonempty.old_unterminated)
+}
