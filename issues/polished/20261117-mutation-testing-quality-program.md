@@ -67,19 +67,19 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 
 - [ ] Moon公式のcoverage出力が**per-test attribution**を提供するか、集約されたline coverageのみか、実toolchain/targetで確認して証拠を残す。
 - [ ] Given test単位マップが欠落・古い・target不一致・動的経路不明、when選択、then広いtest planへ戻る。
-- [ ] Given被験moduleの小/大・public/white-box/property test、when full test vs filtered test、then共通mutantのverdict一致・選択されたtest数・時間を記録する。未到達判定にはcoverageの信頼度を添える。`--pbt-amplify`有効時のseed・trial変更で初めてkillする場合と、amplified pristine controlが失敗する場合もparity fixtureに含める。その解析フェーズでfilterの妥当性が検証されるまでは、amplificationのoracleを未フィルタのまま維持する。
+- [ ] Given被験moduleの小/大・public/white-box/property test、when同一入力・同一mutant選択オプションでfull test vs filtered test、thenまず選択されたmutant ID集合の完全一致を要求し、その全件のverdict一致・選択されたtest数・時間を記録する。testの絞り込みでmutantを欠落させず、共通部分だけでは比較しない。未到達判定にはcoverageの信頼度を添える。`--pbt-amplify`有効時のseed・trial変更で初めてkillする場合と、amplified pristine controlが失敗する場合もparity fixtureに含める。その解析フェーズでfilterの妥当性が検証されるまでは、amplificationのoracleを未フィルタのまま維持する。
 - [ ] per-testが不可能なら**no-go**を記録し、無理なAST call graph選別を実装しない。
 
 ### D3: actionable findings
 
-- [ ] Given`SURVIVED`、when分類、then「未到達」「到達・未検出」「証拠不足」を分け、評価したsuiteの入力・toolchain・targetに結び付いたcoverage等の到達性証拠とkill attributionを使う。生成PBT harnessのwitnessは追加テスト入力の提案であり、元suiteが変異式に到達した証拠にはしない。suiteのcoverageが不完全なら「証拠不足」とし、到達・未到達のどちらも断定しない。
+- [ ] Given`SURVIVED`、when分類、then「未到達」「到達・未検出」「証拠不足」を分け、評価したsuiteの入力・toolchain・targetに結び付いたcoverage等の到達性証拠とkill attributionを使う。生成PBT harnessのwitnessは追加テスト入力の提案であり、元suiteが変異式に到達した証拠にはしない。変異式そのものの評価を識別できる証拠を要求し、同じ行のhitだけでは到達としない（例: `enabled && x < limit`の短絡で`<`が未評価）。suiteのcoverageが不完全、または変異箇所の評価を区別できない場合は「証拠不足」とし、到達・未到達のどちらも断定しない。
 - [ ] Given arid/equivalent候補、whenaccept、then理由・reviewer・対象identity・影響するreport指標を記録し、未acceptのsurvivorを自動抑制しない。
 - [ ] Given無価値/有価値な代表mutant、when人手レビュー、then有用性ラベルの定義、評価件数、合意不一致、誤抑制率を公開し、調整可能にする。
 - [ ] コード削除・kill matrix・テスト簡素化は提案止まり。機械的なテスト削除や本体変更はこのprogramの副作用にしない。
 
 ### D4: PR/agent integration
 
-- [ ] Given`--in-diff`の完了report、whenCI注釈、thensource path/line/mutant ID/根拠/再実行手順と注釈件数の上限を示す。budget中断後の未実行件数・途中結果は、invocation IDと入力・選択集合に結び付いた別の進捗artifactまたは永続診断を根拠にする。完了reportから未完了runの進捗を推定せず、前回reportを流用しない。根拠がなければ件数不明・未完了と表示し、budgetベースの注釈は保留する。
+- [ ] Given`--in-diff`の完了report、whenCI注釈、then現在のinvocation ID・PR入力との一致を検証してからsource path/line/mutant ID/根拠/再実行手順と注釈件数の上限を示す。一致を確認できないreportは公開せず、古い完了reportが残った状態でbaseline/setupが失敗しても前回のfindingsを現在のPRへ注釈しない回帰fixtureを含める。budget中断後の未実行件数・途中結果は、invocation IDと入力・選択集合に結び付いた別の進捗artifactまたは永続診断を根拠にする。完了reportから未完了runの進捗を推定せず、前回reportを流用しない。根拠がなければ件数不明・未完了と表示し、budgetベースの注釈は保留する。
 - [ ] Given同一identity、when`--only ID`相当で再実行、then対象外の結果を暗黙に「成功」とせず、再検証対象と入力変更を表示する。offset依存の現行IDをそのまま編集間stableと主張しない。
 - [ ] Giventestを追加/更新、when再実行、then以前のsurvivorがkillされたか、未検証かを区別する。agent自身が証拠なしでacceptやtest rewriteを実行しない。
 - [ ] GivenPRがtest-only、diffなし、CI cancelled、time budget exceeded、baseline fail、whenCheck出力、thenpartial/unknown/setup errorを明示。初期PR gateは通知中心で始め、実測後にhard gateを別途判断する。
