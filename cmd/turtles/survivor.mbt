@@ -619,147 +619,212 @@ fn pkg_dir_of(pkg_dirs : Map[String, Bool], path : String) -> String {
 }
 
 ///|
-/// Find `import { ... }` blocks in moon.pkg text and return (content
-/// range, whether a `for "..."` scope follows the closing brace) for each.
-fn pkg_import_blocks(text : String) -> Array[((Int32, Int32), Bool)] {
-  let bytes = @utf8.encode(text)
-  let blocks : Array[((Int32, Int32), Bool)] = []
-  let mut i = 0
-  let n = bytes.length()
-  while i < n {
-    // match the `import` keyword on an identifier boundary
-    if bytes[i] == b'i' &&
-      i + 6 <= n &&
-      @utf8.decode_lossy(bytes[i:i + 6]) == "import" &&
-      (i + 6 >= n || !(bytes[i + 6] >= b'a' && bytes[i + 6] <= b'z')) {
-      let mut j = i + 6
-      while j < n &&
-            (
-              bytes[j] == b' ' ||
-              bytes[j] == b'\n' ||
-              bytes[j] == b'\t' ||
-              bytes[j] == b'\r'
-            ) {
-        j = j + 1
-      }
-      if j < n && bytes[j] == b'{' {
-        let open = j
-        let mut depth = 1
-        j = j + 1
-        while j < n && depth > 0 {
-          if bytes[j] == b'{' {
-            depth = depth + 1
-          } else if bytes[j] == b'}' {
-            depth = depth - 1
-          }
-          j = j + 1
-        }
-        let close = j - 1
-        // skip whitespace after '}' and detect a `for` scope qualifier
-        let mut k = j
-        while k < n &&
-              (
-                bytes[k] == b' ' ||
-                bytes[k] == b'\n' ||
-                bytes[k] == b'\t' ||
-                bytes[k] == b'\r'
-              ) {
-          k = k + 1
-        }
-        let scoped = k + 3 <= n && @utf8.decode_lossy(bytes[k:k + 3]) == "for"
-        blocks.push(((open + 1, close), scoped))
-        i = k
-      } else {
-        i = j
-      }
-    } else {
-      i = i + 1
-    }
-  }
-  blocks
-}
-
-///|
-/// Extract `"path"` strings inside a moon.pkg import-block content range.
-fn pkg_import_paths(text : String, start : Int32, end : Int32) -> Array[String] {
-  let bytes = @utf8.encode(text)
-  let paths : Array[String] = []
-  let mut i = if start < 0 { 0 } else { start }
-  let limit = if end > bytes.length() { bytes.length() } else { end }
-  while i < limit {
-    if bytes[i] == b'"' {
-      let mut j = i + 1
-      let mut stop = -1
-      while j < limit {
-        if bytes[j] == b'"' {
-          stop = j
-          break
-        }
-        if bytes[j] == b'\\' {
-          j = j + 1
-        }
-        j = j + 1
-      }
-      if stop < 0 {
-        break
-      }
-      paths.push(@utf8.decode_lossy(bytes[i + 1:stop]))
-      i = stop + 1
-    } else {
-      i = i + 1
-    }
-  }
-  paths
-}
-
-///|
 /// Use Moon's manifest parser for import paths, aliases and scopes.
-/// This keeps comments, whitespace and repeated blocks from masquerading
-/// as imports. Malformed manifests grant no analysis permissions.
+/// This keeps comments and whitespace from masquerading as imports.
+/// Malformed manifests and conflicting aliases grant no analysis permissions.
 fn pkg_text_import_entries(
   text : String,
   scope : String,
 ) -> Array[(String, String?)] {
-  let (ast, reports) = @moon_config.parse_moon_pkg(text)
-  if !reports.is_empty() {
-    return []
+  pkg_text_import_resolution(text, scope).unwrap_or([])
+}
+
+///|
+fn pkg_ast_import_entries(
+  statements : Array[@moon_config.Statement],
+  scope : String,
+) -> Array[(String, String?)] {
+  pkg_ast_import_resolution(statements, scope).unwrap_or([])
+}
+
+///|
+/// None means unresolved; Some([]) means a successfully resolved empty scope.
+/// Only the latter can safely receive an implicit self alias.
+fn pkg_text_import_resolution(
+  text : String,
+  scope : String,
+) -> Array[(String, String?)]? {
+  let result = @moon_config.parse_moon_pkg(text)
+  // Unrelated deprecation warnings do not invalidate resolved import identities.
+  if !result.diagnostics.errors.is_empty() {
+    return None
   }
-  guard ast is @moon_config.Ast::Obj(fields, ..) else { return [] }
-  let entries : Array[(String, String?)] = []
-  for field in fields {
-    let (key, value) = field
-    if key != "import" && (scope == "source" || key != "\{scope}-import") {
-      continue
+  pkg_ast_import_resolution(result.ast.0.iter().collect(), scope)
+}
+
+///|
+/// Resolve an already validated statement set. Purity callers always supply
+/// every statement, so visible conditional imports still fail closed.
+fn pkg_ast_import_resolution(
+  statements : Array[@moon_config.Statement],
+  scope : String,
+) -> Array[(String, String?)]? {
+  // Legacy fields select package paths, but retained modern alias metadata
+  // still applies. Collect both representations before resolving identities.
+  let legacy : Map[String, Array[(String, String?)]] = Map([])
+  for statement in statements {
+    let fields = match statement {
+      @moon_config.Statement::Assign(field) => [field]
+      @moon_config.Statement::Expr(
+        @moon_config.Expr::Apply(name="options", args~, ..),
+      ) => args
+      _ => []
     }
-    guard value is @moon_config.Ast::Arr(items, ..) else { continue }
-    for item in items {
-      match item {
-        @moon_config.Ast::Str(path, ..) => entries.push((path, None))
-        @moon_config.Ast::Obj(props, ..) => {
-          let mut path : String? = None
-          let mut import_alias : String? = None
-          for prop in props {
-            let (name, value) = prop
-            match value {
-              @moon_config.Ast::Str(text, ..) =>
-                if name == "path" {
-                  path = Some(text)
-                } else if name == "alias" {
-                  import_alias = Some(text)
-                }
-              _ => ()
+    for field in fields {
+      let key = match field.key {
+        "import" => "source"
+        "test-import" => "test"
+        "wbtest-import" => "wbtest"
+        _ => continue
+      }
+      if key != "source" && key != scope {
+        continue
+      }
+      if legacy.contains(key) {
+        return None
+      }
+      guard pkg_legacy_import_entries(field.value) is Some(imports) else {
+        return None
+      }
+      legacy[key] = imports
+    }
+  }
+  let blocks : Array[(String, Array[(String, String?)])] = []
+  for statement in statements {
+    if statement
+      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) {
+      let key = match kind {
+        Normal => "source"
+        Test => "test"
+        Wbtest => "wbtest"
+      }
+      if key != "source" && key != scope {
+        continue
+      }
+      if !conditions.is_empty() {
+        return None
+      }
+      blocks.push(
+        (key, items.map(item => (item.path, item.alias_.map(pair => pair.0)))),
+      )
+    }
+  }
+  let modern : Map[String, Array[(String, String?)]] = Map([])
+  for (key, imports) in blocks {
+    let combined = modern.get(key).unwrap_or([])
+    for entry in imports {
+      combined.push(entry)
+    }
+    modern[key] = combined
+  }
+  let selected : Array[(String, String?)] = []
+  let aliases : Array[(String, String?)] = []
+  // Scoped imports replace source bindings for the same package path.
+  for key in ["source", "test", "wbtest"] {
+    let items = modern.get(key).unwrap_or([])
+    for entry in items {
+      aliases.push(entry)
+    }
+    for entry in legacy.get(key).unwrap_or(items) {
+      selected.push(entry)
+    }
+  }
+  let modern_aliases : Map[String, String?] = Map([])
+  for (path, alias_) in pkg_last_path_entries(aliases) {
+    modern_aliases[path] = alias_
+  }
+  let entries : Array[(String, String?)] = []
+  let bindings : Map[String, String] = Map([])
+  for (path, legacy_alias) in pkg_last_path_entries(selected) {
+    let alias_ = match modern_aliases.get(path) {
+      Some(Some(name)) => Some(name)
+      _ => legacy_alias
+    }
+    let name = match alias_ {
+      Some(name) => name
+      None =>
+        match path.rev_find("/") {
+          Some(slash) => path[slash + 1:].to_owned()
+          None => path
+        }
+    }
+    match bindings.get(name) {
+      Some(previous) => {
+        if previous != path {
+          return None
+        }
+        // Repeating the same identity cannot change its purity or scope.
+        continue
+      }
+      None => ()
+    }
+    bindings[name] = path
+    entries.push((path, alias_))
+  }
+  Some(entries)
+}
+
+///|
+/// Preserve the final occurrence of each package path, as Moon does.
+fn pkg_last_path_entries(
+  entries : Array[(String, String?)],
+) -> Array[(String, String?)] {
+  let last : Map[String, Int32] = Map([])
+  for i, (path, _) in entries {
+    last[path] = i
+  }
+  let result = []
+  for i, entry in entries {
+    if last.get(entry.0) == Some(i) {
+      result.push(entry)
+    }
+  }
+  result
+}
+
+///|
+fn pkg_import_alias(path : String, alias_ : String?) -> String {
+  alias_.unwrap_or(path.split("/").last().unwrap().to_owned())
+}
+
+///|
+/// Decode legacy import values without treating malformed identities as pure.
+fn pkg_legacy_import_entries(
+  value : @moon_config.Expr,
+) -> Array[(String, String?)]? {
+  guard value is @moon_config.Expr::Array(items~, ..) else { return None }
+  let entries : Array[(String, String?)] = []
+  for item in items {
+    match item {
+      @moon_config.Expr::String(str~, ..) => entries.push((str, None))
+      @moon_config.Expr::Map(fields~, ..) => {
+        let mut path : String? = None
+        let mut alias_ : String? = None
+        for field in fields {
+          if field.key == "path" || field.key == "alias" {
+            guard field.value is @moon_config.Expr::String(str~, ..) else {
+              return None
+            }
+            if field.key == "path" {
+              if path is Some(_) {
+                return None
+              }
+              path = Some(str)
+            } else {
+              if alias_ is Some(_) {
+                return None
+              }
+              alias_ = Some(str)
             }
           }
-          match path {
-            Some(path) => entries.push((path, import_alias))
-            None => ()
-          }
         }
-        _ => ()
+        guard path is Some(path) else { return None }
+        entries.push((path, alias_))
       }
+      _ => return None
     }
   }
-  entries
+  Some(entries)
 }
 
 ///|
@@ -767,22 +832,47 @@ fn pkg_json_import_entries(
   text : String,
   key : String,
 ) -> Array[(String, String?)] {
-  let json = @json.parse(text) catch { _ => return [] }
-  guard json is Object(fields) else { return [] }
-  guard fields.get(key) is Some(Array(entries)) else { return [] }
+  pkg_json_import_resolution(text, key).unwrap_or([])
+}
+
+///|
+fn pkg_json_import_resolution(
+  text : String,
+  key : String,
+) -> Array[(String, String?)]? {
+  let json = @json.parse(text) catch { _ => return None }
+  guard json is Object(fields) else { return None }
+  let entries = match fields.get(key) {
+    None => return Some([])
+    Some(Array(entries)) => entries
+    _ => return None
+  }
   let imports : Array[(String, String?)] = []
   for entry in entries {
     match entry {
       String(path) => imports.push((path, None))
-      Object(obj) =>
-        match json_field_string(obj, "path") {
-          Some(path) => imports.push((path, json_field_string(obj, "alias")))
-          None => ()
+      Object(obj) => {
+        guard json_field_string(obj, "path") is Some(path) else { return None }
+        let alias_ = match obj.get("alias") {
+          None => None
+          Some(String(name)) => Some(name)
+          _ => return None
         }
-      _ => ()
+        imports.push((path, alias_))
+      }
+      _ => return None
     }
   }
-  imports
+  Some(imports)
+}
+
+///|
+fn pkg_self_alias(dir : String, module_name : String?) -> String {
+  let name = if dir == "." { module_name.unwrap_or(dir) } else { dir }
+  match name.rev_find("/") {
+    Some(slash) => name[slash + 1:].to_owned()
+    None => name
+  }
 }
 
 ///|
@@ -801,18 +891,26 @@ async fn pkg_import_map(
   let json_pkg = path_join(abs, "moon.pkg.json")
   let raw_entries : Array[(String, String?)] = []
   if @fs.exists(text_pkg) {
-    let text = @fs.read_file(text_pkg).text() catch { _ => "" }
-    for entry in pkg_text_import_entries(text, scope) {
+    let text = @fs.read_file(text_pkg).text() catch { _ => return Map([]) }
+    guard pkg_text_import_resolution(text, scope) is Some(entries) else {
+      return Map([])
+    }
+    for entry in entries {
       raw_entries.push(entry)
     }
-  }
-  if @fs.exists(json_pkg) {
-    let text = @fs.read_file(json_pkg).text() catch { _ => "" }
-    for entry in pkg_json_import_entries(text, "import") {
+  } else if @fs.exists(json_pkg) {
+    let text = @fs.read_file(json_pkg).text() catch { _ => return Map([]) }
+    guard pkg_json_import_resolution(text, "import") is Some(entries) else {
+      return Map([])
+    }
+    for entry in entries {
       raw_entries.push(entry)
     }
     if scope != "source" {
-      for entry in pkg_json_import_entries(text, "\{scope}-import") {
+      guard pkg_json_import_resolution(text, "\{scope}-import") is Some(entries) else {
+        return Map([])
+      }
+      for entry in entries {
         raw_entries.push(entry)
       }
     }
@@ -843,17 +941,14 @@ async fn pkg_import_map(
     }
     imports[bound_alias] = resolved
   }
-  let self_name = if dir == "." {
-    match module_name {
-      Some(name) => name
-      None => dir
-    }
-  } else {
-    dir
-  }
-  let self_alias = match self_name.rev_find("/") {
-    Some(slash) => self_name[slash + 1:].to_owned()
-    None => self_name
+  let self_alias = pkg_self_alias(dir, module_name)
+  // Black-box tests implicitly import the package under its short name.
+  // Explicit dependencies with that alias can bind differently in Moon;
+  // Withhold only the ambiguous alias; unrelated resolved bindings remain
+  // useful. Return before implicit self fallback can recreate the ambiguity.
+  if scope == "test" && imports.get(self_alias) is Some(path) && path != dir {
+    imports.remove(self_alias)
+    return imports
   }
   if !imports.contains(self_alias) {
     imports[self_alias] = dir
@@ -1283,6 +1378,7 @@ fn enclosing_fn(index : ModuleIndex, mutation : Mutation) -> FnInfo? {
 
 ///|
 /// Skip reasons the witness reports on the survivor row.
+#derive(Eq)
 enum WitnessSkip {
   EffectsUnknown
   Recursive
@@ -1290,7 +1386,7 @@ enum WitnessSkip {
   NameCollision
   Nondeterministic
   HarnessError
-} derive(Eq)
+}
 
 ///|
 fn witness_skip_name(skip : WitnessSkip) -> String {
