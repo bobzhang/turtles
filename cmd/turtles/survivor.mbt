@@ -626,21 +626,39 @@ fn pkg_text_import_entries(
   text : String,
   scope : String,
 ) -> Array[(String, String?)] {
+  pkg_text_import_resolution(text, scope).unwrap_or([])
+}
+
+///|
+fn pkg_ast_import_entries(
+  statements : Array[@moon_config.Statement],
+  scope : String,
+) -> Array[(String, String?)] {
+  pkg_ast_import_resolution(statements, scope).unwrap_or([])
+}
+
+///|
+/// None means unresolved; Some([]) means a successfully resolved empty scope.
+/// Only the latter can safely receive an implicit self alias.
+fn pkg_text_import_resolution(
+  text : String,
+  scope : String,
+) -> Array[(String, String?)]? {
   let result = @moon_config.parse_moon_pkg(text)
   // Unrelated deprecation warnings do not invalidate resolved import identities.
   if !result.diagnostics.errors.is_empty() {
-    return []
+    return None
   }
-  pkg_ast_import_entries(result.ast.0.iter().collect(), scope)
+  pkg_ast_import_resolution(result.ast.0.iter().collect(), scope)
 }
 
 ///|
 /// Resolve an already validated statement set. Purity callers always supply
 /// every statement, so visible conditional imports still fail closed.
-fn pkg_ast_import_entries(
+fn pkg_ast_import_resolution(
   statements : Array[@moon_config.Statement],
   scope : String,
-) -> Array[(String, String?)] {
+) -> Array[(String, String?)]? {
   // Legacy fields select package paths, but retained modern alias metadata
   // still applies. Collect both representations before resolving identities.
   let legacy : Map[String, Array[(String, String?)]] = Map([])
@@ -663,10 +681,10 @@ fn pkg_ast_import_entries(
         continue
       }
       if legacy.contains(key) {
-        return []
+        return None
       }
       guard pkg_legacy_import_entries(field.value) is Some(imports) else {
-        return []
+        return None
       }
       legacy[key] = imports
     }
@@ -684,7 +702,7 @@ fn pkg_ast_import_entries(
         continue
       }
       if !conditions.is_empty() {
-        return []
+        return None
       }
       blocks.push(
         (key, items.map(item => (item.path, item.alias_.map(pair => pair.0)))),
@@ -733,7 +751,7 @@ fn pkg_ast_import_entries(
     match bindings.get(name) {
       Some(previous) => {
         if previous != path {
-          return []
+          return None
         }
         // Repeating the same identity cannot change its purity or scope.
         continue
@@ -743,7 +761,7 @@ fn pkg_ast_import_entries(
     bindings[name] = path
     entries.push((path, alias_))
   }
-  entries
+  Some(entries)
 }
 
 ///|
@@ -814,22 +832,38 @@ fn pkg_json_import_entries(
   text : String,
   key : String,
 ) -> Array[(String, String?)] {
-  let json = @json.parse(text) catch { _ => return [] }
-  guard json is Object(fields) else { return [] }
-  guard fields.get(key) is Some(Array(entries)) else { return [] }
+  pkg_json_import_resolution(text, key).unwrap_or([])
+}
+
+///|
+fn pkg_json_import_resolution(
+  text : String,
+  key : String,
+) -> Array[(String, String?)]? {
+  let json = @json.parse(text) catch { _ => return None }
+  guard json is Object(fields) else { return None }
+  let entries = match fields.get(key) {
+    None => return Some([])
+    Some(Array(entries)) => entries
+    _ => return None
+  }
   let imports : Array[(String, String?)] = []
   for entry in entries {
     match entry {
       String(path) => imports.push((path, None))
-      Object(obj) =>
-        match json_field_string(obj, "path") {
-          Some(path) => imports.push((path, json_field_string(obj, "alias")))
-          None => ()
+      Object(obj) => {
+        guard json_field_string(obj, "path") is Some(path) else { return None }
+        let alias_ = match obj.get("alias") {
+          None => None
+          Some(String(name)) => Some(name)
+          _ => return None
         }
-      _ => ()
+        imports.push((path, alias_))
+      }
+      _ => return None
     }
   }
-  imports
+  Some(imports)
 }
 
 ///|
@@ -848,18 +882,27 @@ async fn pkg_import_map(
   let json_pkg = path_join(abs, "moon.pkg.json")
   let raw_entries : Array[(String, String?)] = []
   if @fs.exists(text_pkg) {
-    let text = @fs.read_file(text_pkg).text() catch { _ => "" }
-    for entry in pkg_text_import_entries(text, scope) {
+    let text = @fs.read_file(text_pkg).text() catch { _ => return Map([]) }
+    guard pkg_text_import_resolution(text, scope) is Some(entries) else {
+      return Map([])
+    }
+    for entry in entries {
       raw_entries.push(entry)
     }
   }
   if @fs.exists(json_pkg) {
-    let text = @fs.read_file(json_pkg).text() catch { _ => "" }
-    for entry in pkg_json_import_entries(text, "import") {
+    let text = @fs.read_file(json_pkg).text() catch { _ => return Map([]) }
+    guard pkg_json_import_resolution(text, "import") is Some(entries) else {
+      return Map([])
+    }
+    for entry in entries {
       raw_entries.push(entry)
     }
     if scope != "source" {
-      for entry in pkg_json_import_entries(text, "\{scope}-import") {
+      guard pkg_json_import_resolution(text, "\{scope}-import") is Some(entries) else {
+        return Map([])
+      }
+      for entry in entries {
         raw_entries.push(entry)
       }
     }

@@ -1232,7 +1232,7 @@ test "QuickCheck condition evaluation is three valued and target explicit" {
   assert_eq(pkg_text_quickcheck_alias(shadow, "source"), None)
   assert_eq(
     pkg_text_quickcheck_alias(shadow, "source", target=Some("js")),
-    None,
+    Some("other"),
   )
   assert_eq(
     pkg_text_quickcheck_alias(shadow, "source", target=Some("native")),
@@ -1272,6 +1272,115 @@ async test "first conditional block never captures inserted QuickCheck" {
       assert_true(witnessed.witness is Some(value) && value != "none")
       let updated = @fs.read_file(path_join(dir, "moon.pkg")).text()
       assert_true(updated.has_prefix(manifest + "\nimport {"))
+    }
+  })
+}
+
+///|
+test "import resolution distinguishes unknown from an empty scope" {
+  assert_eq(pkg_text_import_resolution("", "source"), Some([]))
+  assert_eq(
+    pkg_text_import_resolution(
+      "#cfg(false)\nimport { \"moonbitlang/core/math\" }", "source",
+    ),
+    None,
+  )
+  assert_eq(pkg_text_import_resolution("import {", "source"), None)
+  assert_eq(pkg_json_import_resolution("{}", "import"), Some([]))
+  assert_eq(pkg_json_import_resolution("{\"import\": [42]}", "import"), None)
+}
+
+///|
+async test "unknown imports never acquire an implicit self alias" {
+  let dir = @fs.tmpdir(prefix="turtles-unknown-self")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    @fs.write_file(path_join(dir, "moon.mod"), "name = \"x/demo\"\n")
+    @fs.mkdir(path_join(dir, "impure"))
+    @fs.write_file(path_join(dir, "impure/moon.pkg"), "")
+    @fs.write_file(
+      path_join(dir, "impure/lib.mbt"),
+      "pub fn foo(x : Int) -> Int { println(\"effect\"); x }\n",
+    )
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn foo(x : Int) -> Int { x }\npub fn changed(x : Int) -> Int { @demo.foo(x) + 1 }\n",
+    )
+    for extra in ["", "\n#cfg(false)\nimport { \"moonbitlang/core/math\" }"] {
+      @fs.write_file(
+        path_join(dir, "moon.pkg"),
+        "import { \"x/demo/impure\" @demo }" + extra,
+      )
+      let index = build_module_index(dir)
+      assert_true(
+        witness_eligible(index, index.pkgs["."].fns["changed"])
+        is Some(EffectsUnknown),
+      )
+      let imports = pkg_import_map(
+        dir,
+        ".",
+        Some("x/demo"),
+        { "impure": true },
+        "source",
+      )
+      if extra != "" {
+        assert_eq(imports.get("demo"), None)
+      }
+      assert_true(
+        run_moon_command(dir, ["check"], 60000, None, target=Some("native"))
+        is CommandSuccess,
+      )
+    }
+    // A genuinely empty valid scope may still provide the implicit self alias.
+    @fs.write_file(path_join(dir, "moon.pkg"), "")
+    assert_eq(
+      pkg_import_map(dir, ".", Some("x/demo"), Map([]), "source").get("demo"),
+      Some("."),
+    )
+    @fs.write_file(
+      path_join(dir, "moon.pkg"),
+      "#cfg(false)\nimport { \"moonbitlang/core/math\" }",
+    )
+    let index = build_module_index(dir)
+    assert_true(
+      witness_eligible(index, index.pkgs["."].fns["changed"])
+      is Some(EffectsUnknown),
+    )
+  })
+}
+
+///|
+async test "definitely active conditional QuickCheck imports generate witnesses" {
+  let dir = @fs.tmpdir(prefix="turtles-active-qc")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    for cfg in ["true", "target = \"native\"", "all(true, target = \"native\")"] {
+      let manifest = "#cfg(\{cfg})\nimport { \"moonbitlang/core/quickcheck\" @qc }"
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let source = "pub fn changed(x : Int) -> Int { x + 1 }\n"
+      @fs.write_file(path_join(dir, "lib.mbt"), source)
+      let index = build_module_index(dir)
+      let offset = byte_offset_of(source, "+")
+      let result = {
+        ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+        packages: None,
+      }
+      let witnessed = witness_one(
+        dir,
+        index.pkgs["."].fns["changed"],
+        result,
+        "changed_original",
+        "active guard",
+        "active witness",
+        60000,
+        None,
+        Some("native"),
+      )
+      assert_eq(witnessed.witness_skipped, None)
+      assert_true(witnessed.witness is Some(value) && value != "none")
+      assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), manifest)
+      assert_eq(pkg_text_import_resolution(manifest, "source"), None)
     }
   })
 }

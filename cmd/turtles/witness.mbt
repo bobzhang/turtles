@@ -221,7 +221,14 @@ fn pkg_text_quickcheck_resolution(
   let conditional : Array[@moon_config.ImportItem] = []
   for statement in parsed.ast.0 {
     if statement
-      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) {
+      is @moon_config.Statement::Import(
+        items~,
+        kind~,
+        conditions~,
+        keyword_loc~,
+        list_loc~,
+        loc~,
+      ) {
       let visible = match kind {
         Normal => true
         Test => scope == "test"
@@ -234,6 +241,24 @@ fn pkg_text_quickcheck_resolution(
             condition.parsed is Some(parsed) &&
             quickcheck_condition_value(parsed, target) == Some(false)
           }) {
+          continue
+        }
+        if conditions.all(condition => {
+            condition.parsed is Some(parsed) &&
+            quickcheck_condition_value(parsed, target) == Some(true)
+          }) {
+          // This normalization is local to QuickCheck lookup. The purity
+          // resolver still sees the original conditional statements.
+          unconditional.push(
+            @moon_config.Statement::Import(
+              items~,
+              kind~,
+              conditions=[],
+              keyword_loc~,
+              list_loc~,
+              loc~,
+            ),
+          )
           continue
         }
         for item in items {
