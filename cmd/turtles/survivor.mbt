@@ -867,6 +867,15 @@ fn pkg_json_import_resolution(
 }
 
 ///|
+fn pkg_self_alias(dir : String, module_name : String?) -> String {
+  let name = if dir == "." { module_name.unwrap_or(dir) } else { dir }
+  match name.rev_find("/") {
+    Some(slash) => name[slash + 1:].to_owned()
+    None => name
+  }
+}
+
+///|
 /// Read imports visible to the requested compilation scope. Preserve
 /// external identities: qualifier spelling alone never establishes purity.
 async fn pkg_import_map(
@@ -889,8 +898,7 @@ async fn pkg_import_map(
     for entry in entries {
       raw_entries.push(entry)
     }
-  }
-  if @fs.exists(json_pkg) {
+  } else if @fs.exists(json_pkg) {
     let text = @fs.read_file(json_pkg).text() catch { _ => return Map([]) }
     guard pkg_json_import_resolution(text, "import") is Some(entries) else {
       return Map([])
@@ -933,17 +941,12 @@ async fn pkg_import_map(
     }
     imports[bound_alias] = resolved
   }
-  let self_name = if dir == "." {
-    match module_name {
-      Some(name) => name
-      None => dir
-    }
-  } else {
-    dir
-  }
-  let self_alias = match self_name.rev_find("/") {
-    Some(slash) => self_name[slash + 1:].to_owned()
-    None => self_name
+  let self_alias = pkg_self_alias(dir, module_name)
+  // Black-box tests implicitly import the package under its short name.
+  // Explicit dependencies with that alias can bind differently in Moon;
+  // do not grant any purity/amplification permissions for an ambiguous scope.
+  if scope == "test" && imports.get(self_alias) is Some(path) && path != dir {
+    return Map([])
   }
   if !imports.contains(self_alias) {
     imports[self_alias] = dir

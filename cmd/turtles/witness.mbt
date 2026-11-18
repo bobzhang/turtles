@@ -308,6 +308,31 @@ async fn ensure_quickcheck_import(
   scope~ : String = "source",
   target~ : String? = None,
 ) -> String? {
+  let alias_ = ensure_quickcheck_import_binding(
+    workspace,
+    pkg_dir,
+    scope~,
+    target~,
+  )
+  if scope == "test" {
+    let module_name = module_name_of(workspace)
+    if pkg_dir == "." && module_name is None {
+      return None
+    }
+    if alias_ == Some(pkg_self_alias(pkg_dir, module_name)) {
+      return None
+    }
+  }
+  alias_
+}
+
+///|
+async fn ensure_quickcheck_import_binding(
+  workspace : String,
+  pkg_dir : String,
+  scope~ : String = "source",
+  target~ : String? = None,
+) -> String? {
   let dir = if pkg_dir == "." {
     workspace
   } else {
