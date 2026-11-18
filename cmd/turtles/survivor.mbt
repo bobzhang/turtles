@@ -680,39 +680,6 @@ fn pkg_import_blocks(text : String) -> Array[((Int32, Int32), Bool)] {
 }
 
 ///|
-/// Extract `"path"` strings inside a moon.pkg import-block content range.
-fn pkg_import_paths(text : String, start : Int32, end : Int32) -> Array[String] {
-  let bytes = @utf8.encode(text)
-  let paths : Array[String] = []
-  let mut i = if start < 0 { 0 } else { start }
-  let limit = if end > bytes.length() { bytes.length() } else { end }
-  while i < limit {
-    if bytes[i] == b'"' {
-      let mut j = i + 1
-      let mut stop = -1
-      while j < limit {
-        if bytes[j] == b'"' {
-          stop = j
-          break
-        }
-        if bytes[j] == b'\\' {
-          j = j + 1
-        }
-        j = j + 1
-      }
-      if stop < 0 {
-        break
-      }
-      paths.push(@utf8.decode_lossy(bytes[i + 1:stop]))
-      i = stop + 1
-    } else {
-      i = i + 1
-    }
-  }
-  paths
-}
-
-///|
 /// Use Moon's manifest parser for import paths, aliases and scopes.
 /// This keeps comments and whitespace from masquerading as imports.
 /// Malformed manifests and conflicting aliases grant no analysis permissions.
@@ -779,10 +746,20 @@ fn pkg_text_import_entries(
       blocks.push((key, imports))
     }
   }
+  // Moon resolves repeated paths within each scope before checking aliases.
+  let effective : Map[String, Array[(String, String?)]] = Map([])
+  for (key, imports) in blocks {
+    let combined = effective.get(key).unwrap_or([])
+    for entry in imports {
+      combined.push(entry)
+    }
+    effective[key] = combined
+  }
   let entries : Array[(String, String?)] = []
   let bindings : Map[String, String] = Map([])
-  for (_, imports) in blocks {
-    for (path, alias_) in imports {
+  for key in ["source", "test", "wbtest"] {
+    for
+      (path, alias_) in pkg_last_path_entries(effective.get(key).unwrap_or([])) {
       let name = match alias_ {
         Some(name) => name
         None =>
@@ -806,6 +783,29 @@ fn pkg_text_import_entries(
     }
   }
   entries
+}
+
+///|
+/// Preserve the final occurrence of each package path, as Moon does.
+fn pkg_last_path_entries(
+  entries : Array[(String, String?)],
+) -> Array[(String, String?)] {
+  let last : Map[String, Int32] = Map([])
+  for i, (path, _) in entries {
+    last[path] = i
+  }
+  let result = []
+  for i, entry in entries {
+    if last.get(entry.0) == Some(i) {
+      result.push(entry)
+    }
+  }
+  result
+}
+
+///|
+fn pkg_import_alias(path : String, alias_ : String?) -> String {
+  alias_.unwrap_or(path.split("/").last().unwrap().to_owned())
 }
 
 ///|

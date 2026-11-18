@@ -439,13 +439,13 @@ async test "ensure_quickcheck_import splices into regular imports only" {
       path_join(dir, "moon.pkg"),
       "import {\n  \"moonbitlang/core/quickcheck\",\n} for \"test\"\n",
     )
-    inspect(ensure_quickcheck_import(dir, "."), content="true")
+    assert_eq(ensure_quickcheck_import(dir, "."), Some("quickcheck"))
     let first = @fs.read_file(path_join(dir, "moon.pkg")).text()
     assert_true(first.contains("} for \"test\""))
     let second = first[first.find("} for").unwrap() + 5:].to_owned()
     assert_true(second.contains("\"moonbitlang/core/quickcheck\""))
     // idempotent: already imported -> no second splice
-    inspect(ensure_quickcheck_import(dir, "."), content="true")
+    assert_eq(ensure_quickcheck_import(dir, "."), Some("quickcheck"))
     let again = @fs.read_file(path_join(dir, "moon.pkg")).text()
     inspect(again == first, content="true")
   })
@@ -460,7 +460,7 @@ async test "ensure_quickcheck_import handles moon.pkg.json manifests" {
       path_join(dir, "moon.pkg.json"),
       "{\n  \"import\": [\"moonbitlang/core/string\"]\n}\n",
     )
-    inspect(ensure_quickcheck_import(dir, "."), content="true")
+    assert_eq(ensure_quickcheck_import(dir, "."), Some("quickcheck"))
     let json = @fs.read_file(path_join(dir, "moon.pkg.json")).text()
     assert_true(json.contains("moonbitlang/core/quickcheck"))
     assert_true(json.contains("moonbitlang/core/string"))
@@ -798,7 +798,7 @@ test "conflicting visible aliases fail closed while identical bindings deduplica
   assert_true(pkg_text_import_entries(scoped, "test").is_empty())
   let repeated = "import { \"moonbitlang/core/math\" }\nimport { \"moonbitlang/core/math\" @math }"
   assert_eq(pkg_text_import_entries(repeated, "source"), [
-    ("moonbitlang/core/math", None),
+    ("moonbitlang/core/math", Some("math")),
   ])
 }
 
@@ -842,7 +842,7 @@ async test "legacy effective imports receive quickcheck and produce real witness
       ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
       packages: None,
     }
-    assert_true(ensure_quickcheck_import(dir, "."))
+    assert_true(ensure_quickcheck_import(dir, ".") is Some(_))
     let witnessed = witness_one(
       dir,
       entry,
@@ -862,7 +862,7 @@ async test "legacy effective imports receive quickcheck and produce real witness
         ("moonbitlang/core/quickcheck", None),
       ),
     )
-    assert_true(ensure_quickcheck_import(dir, "."))
+    assert_true(ensure_quickcheck_import(dir, ".") is Some(_))
     assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), updated)
   })
 }
@@ -900,16 +900,101 @@ async test "quickcheck legacy insertion respects empty lists and aliases" {
         "options(\"import\": [])", "options(\"import\": [{\"path\": \"moonbitlang/core/quickcheck\", \"alias\": \"qc\"}])",
       ] {
       @fs.write_file(path_join(dir, "moon.pkg"), manifest)
-      assert_true(ensure_quickcheck_import(dir, "."), msg=manifest)
+      assert_true(ensure_quickcheck_import(dir, ".") is Some(_), msg=manifest)
       let entries = pkg_text_import_entries(
         @fs.read_file(path_join(dir, "moon.pkg")).text(),
         "source",
       )
-      assert_true(entries.contains(("moonbitlang/core/quickcheck", None)))
+      assert_true(
+        entries.any(entry => entry.0 == "moonbitlang/core/quickcheck"),
+      )
     }
     let conflict = "options(\"import\": [{\"path\": \"other/pkg\", \"alias\": \"quickcheck\"}])"
     @fs.write_file(path_join(dir, "moon.pkg"), conflict)
-    assert_false(ensure_quickcheck_import(dir, "."))
+    assert_true(ensure_quickcheck_import(dir, ".") is None)
     assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), conflict)
   })
+}
+
+///|
+test "same-scope duplicate package paths keep their final alias before conflicts" {
+  for
+    text in [
+      "import { \"moonbitlang/core/math\" @m, \"moonbitlang/core/math\" @math2, \"moonbitlang/core/json\" @m }",
+      "import { \"moonbitlang/core/math\" @m }\nimport { \"moonbitlang/core/math\" @math2, \"moonbitlang/core/json\" @m }",
+      "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"m\"}, {\"path\": \"moonbitlang/core/math\", \"alias\": \"math2\"}, {\"path\": \"moonbitlang/core/json\", \"alias\": \"m\"}])",
+    ] {
+    assert_eq(pkg_text_import_entries(text, "source"), [
+      ("moonbitlang/core/math", Some("math2")),
+      ("moonbitlang/core/json", Some("m")),
+    ])
+  }
+}
+
+///|
+async test "effective quickcheck aliases and duplicate paths produce Moon witnesses" {
+  for
+    (filename, manifest, math_alias, qc_alias) in [
+      (
+        "moon.pkg", "import { \"moonbitlang/core/math\" @m, \"moonbitlang/core/quickcheck\" @qc }",
+        "m", "qc",
+      ),
+      (
+        "moon.pkg", "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"m\"}, {\"path\": \"moonbitlang/core/quickcheck\", \"alias\": \"qc\"}])",
+        "m", "qc",
+      ),
+      (
+        "moon.pkg.json", "{\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"m\"}, {\"path\": \"moonbitlang/core/quickcheck\", \"alias\": \"qc\"}]}",
+        "m", "qc",
+      ),
+      (
+        "moon.pkg", "import { \"moonbitlang/core/math\" @m, \"moonbitlang/core/math\" @math2, \"moonbitlang/core/json\" @m }",
+        "math2", "quickcheck",
+      ),
+    ] {
+    let dir = @fs.tmpdir(prefix="turtles-effective-witness")
+    @async.with_task_group(group => {
+      group.add_defer(() => @fs.rmdir(dir, recursive=true))
+      @fs.write_file(
+        path_join(dir, "moon.mod"),
+        "name = \"turtles/alias_test\"\nversion = \"0.1.0\"\n",
+      )
+      @fs.write_file(path_join(dir, filename), manifest)
+      if filename == "moon.pkg.json" {
+        assert_eq(ensure_quickcheck_import(dir, "."), Some(qc_alias))
+        assert_eq(@fs.read_file(path_join(dir, filename)).text(), manifest)
+        // Latest Moon requires migration; verify the JSON API before migrating.
+        assert_true(
+          run_moon_command(dir, ["fmt"], 60000, None) is CommandSuccess,
+        )
+      }
+      let source = "pub fn changed(x : Double) -> Double { @\{math_alias}.sin(x) + 1.0 }\n"
+      @fs.write_file(path_join(dir, "lib.mbt"), source)
+      let index = build_module_index(dir)
+      let entry = index.pkgs["."].fns["changed"]
+      assert_true(witness_eligible(index, entry) is None)
+      assert_eq(ensure_quickcheck_import(dir, "."), Some(qc_alias))
+      if qc_alias == "qc" && filename != "moon.pkg.json" {
+        assert_eq(@fs.read_file(path_join(dir, filename)).text(), manifest)
+      }
+      let offset = byte_offset_of(source, "+")
+      let result = {
+        ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+        packages: None,
+      }
+      let witnessed = witness_one(
+        dir,
+        entry,
+        result,
+        "changed_original",
+        "alias guard",
+        "alias witness",
+        60000,
+        None,
+        Some("native"),
+      )
+      assert_eq(witnessed.witness_skipped, None, msg=manifest)
+      assert_true(witnessed.witness is Some(value) && value != "none")
+    })
+  }
 }
