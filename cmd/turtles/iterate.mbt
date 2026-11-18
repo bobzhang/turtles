@@ -57,7 +57,7 @@ async fn load_prior_report(path : String) -> PriorReport? {
     return None
   }
   match top.get("target") {
-    None | Some(Null) | Some(String(_)) => ()
+    Some(Null) | Some(String(_)) => ()
     _ => return None
   }
   let files : Map[String, String] = Map([])

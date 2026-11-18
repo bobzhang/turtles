@@ -216,7 +216,10 @@ fn build_report(
     module_path: root,
     turtles_version,
     moon_version,
-    target,
+    target: match target {
+      Some(value) => Json::string(value)
+      None => Json::null()
+    },
     inactive_mutants: inactive.length(),
     inactive_files: unique_sorted_paths(inactive),
     baseline_duration_ms,
