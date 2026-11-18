@@ -129,7 +129,7 @@ async test "diff selection validates excluded test sources and preserves mutant 
     @fs.write_file(path_join(root, "a.mbt"), "first\nsecond\n")
     @fs.write_file(path_join(root, "a_test.mbt"), "test\n")
     let sections = parse_unified_sections(
-      b"--- a/a.mbt\n+++ b/a.mbt\n@@ -1,2 +1,2 @@\n first\n-old\n+second\n--- a/a_test.mbt\n+++ b/a_test.mbt\n@@ -1 +1 @@\n-old\n+test\n",
+      b"--- a.mbt\n+++ a.mbt\n@@ -1,2 +1,2 @@\n first\n-old\n+second\n--- a_test.mbt\n+++ a_test.mbt\n@@ -1 +1 @@\n-old\n+test\n",
     )
     let base : Mutation = {
       path: "a.mbt",
@@ -197,7 +197,7 @@ async test "represented MoonBit source containing NUL is rejected" {
   @async.with_task_group(group => {
     group.add_defer(() => @fs.rmdir(root, recursive=true))
     @fs.write_file(path_join(root, "a.mbt"), b"a\x00b\n")
-    let patch = b"--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-old\n+a\x00b\n"
+    let patch = b"--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+a\x00b\n"
     let sections = parse_diff_sections(patch)
     assert_true(
       (Some(prepare_diff_inputs(root, "d", sections)) catch { _ => None })
@@ -220,19 +220,89 @@ async test "added sources require complete content while empty additions stay va
       is None,
     )
     let partial = parse_diff_sections(
-      b"--- /dev/null\n+++ b/new.mbt\n@@ -0,0 +1 @@\n+one\n",
+      b"--- /dev/null\n+++ new.mbt\n@@ -0,0 +1 @@\n+one\n",
     )
     assert_true(
       (Some(prepare_diff_inputs(root, "patch", partial)) catch { _ => None })
       is None,
     )
     let complete = parse_diff_sections(
-      b"--- /dev/null\n+++ b/new.mbt\n@@ -0,0 +1,2 @@\n+one\n+two\n",
+      b"--- /dev/null\n+++ new.mbt\n@@ -0,0 +1,2 @@\n+one\n+two\n",
     )
     let selected = prepare_diff_inputs(root, "patch", complete)
     assert_eq(selected.ranges["new.mbt"][0].end, 8)
     @fs.write_file(file, "")
     let empty = prepare_diff_inputs(root, "patch", truncated)
     assert_true(empty.ranges["new.mbt"].is_empty())
+  })
+}
+
+///|
+test "binary range lookup matches linear half-open oracle at every boundary" {
+  for
+    ranges in [
+      [],
+      [{ start: 2, end: 5, }],
+      [{ start: 0, end: 2, }, { start: 4, end: 7, }, { start: 9, end: 10, }],
+    ] {
+    for start = -1; start <= 12; start = start + 1 {
+      for end = -1; end <= 12; end = end + 1 {
+        let mut expected = false
+        for range in ranges {
+          if diff_ranges_intersect(start, end, range) {
+            expected = true
+          }
+        }
+        assert_eq(diff_sorted_ranges_intersect(start, end, ranges), expected)
+      }
+    }
+  }
+}
+
+///|
+test "binary range lookup handles many disjoint additions and long spans" {
+  let ranges : Array[DiffByteRange] = []
+  for i = 0; i < 30000; i = i + 1 {
+    ranges.push({ start: i * 4, end: i * 4 + 2, })
+  }
+  for i = 0; i < 30000; i = i + 1 {
+    assert_true(diff_sorted_ranges_intersect(i * 4, i * 4 + 1, ranges))
+    assert_false(diff_sorted_ranges_intersect(i * 4 + 2, i * 4 + 4, ranges))
+  }
+  assert_true(diff_sorted_ranges_intersect(2, 119999, ranges))
+  assert_false(diff_sorted_ranges_intersect(120000, 120010, ranges))
+}
+
+///|
+async test "prefixless added nested b path never selects same content root path" {
+  let root = @fs.tmpdir(prefix="turtles-literal-addition")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.mkdir(path_join(root, "b"))
+    @fs.write_file(path_join(root, "calc.mbt"), "true\n")
+    @fs.write_file(path_join(root, "b/calc.mbt"), "true\n")
+    let sections = parse_diff_sections(
+      b"--- /dev/null\n+++ b/calc.mbt\n@@ -0,0 +1 @@\n+true\n",
+    )
+    let inputs = prepare_diff_inputs(root, "patch", sections)
+    assert_true(inputs.ranges.contains("b/calc.mbt"))
+    assert_false(inputs.ranges.contains("calc.mbt"))
+  })
+}
+
+///|
+async test "standalone paired a b paths select literal destination not root" {
+  let root = @fs.tmpdir(prefix="turtles-literal-pair")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.mkdir(path_join(root, "b"))
+    @fs.write_file(path_join(root, "calc.mbt"), "true\n")
+    @fs.write_file(path_join(root, "b/calc.mbt"), "true\n")
+    let sections = parse_diff_sections(
+      b"--- a/calc.mbt\n+++ b/calc.mbt\n@@ -1 +1 @@\n-false\n+true\n",
+    )
+    let inputs = prepare_diff_inputs(root, "patch", sections)
+    assert_true(inputs.ranges.contains("b/calc.mbt"))
+    assert_false(inputs.ranges.contains("calc.mbt"))
   })
 }

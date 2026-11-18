@@ -79,7 +79,7 @@ test "Git sections validate header agreement and source modes" {
 test "Git binary sections are framed and reject MoonBit sources" {
   let (section, next) = parse_git_diff_section(
     diff_patch_lines(
-      b"diff --git a/a.bin b/a.bin\nindex 1234567..abcdef0 100644\nGIT binary patch\nliteral 3\nabc\n\n",
+      b"diff --git a/a.bin b/a.bin\nindex 1234567..abcdef0 100644\nGIT binary patch\nliteral 3\nC00000\n\n",
     ),
     0,
   )
@@ -235,9 +235,9 @@ test "Git differing index blobs require content even with mode or rename metadat
 
 ///|
 test "binary payload cannot swallow prefixless unified source changes" {
-  let patch = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nabc\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n\n"
+  let patch = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nC00000\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n\n"
   assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
-  let valid = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nabc\n\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n"
+  let valid = b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 3\nC00000\n\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-old\n+new\n"
   let sections = parse_diff_sections(valid)
   assert_eq(sections.length(), 2)
   assert_eq(sections[1].hunks.length(), 1)
@@ -257,5 +257,17 @@ test "empty blob accepts index abbreviations including core abbrev five" {
     ] {
     let (section, _) = parse_git_diff_section(diff_patch_lines(patch), 0)
     assert_true(section.hunks.is_empty())
+  }
+}
+
+///|
+test "Git binary payload rejects truncated width and invalid alphabet" {
+  for payload in ["A", "A0000", "A000000", "A0000:", "A0000/", "z00000"] {
+    let patch = @utf8.encode(
+      "diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\n" +
+      payload +
+      "\n\n",
+    )
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
   }
 }
