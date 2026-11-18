@@ -246,7 +246,10 @@ fn diff_binary_header_matches(
       _ => None
     }
     if normalized == Some((expected_old, expected_new)) ||
-      (normalized is Some(_) && (old_raw, new_raw) == (expected_old, expected_new)) {
+      (
+        normalized is Some(_) &&
+        (old_raw, new_raw) == (expected_old, expected_new)
+      ) {
       matches = matches + 1
     }
   }

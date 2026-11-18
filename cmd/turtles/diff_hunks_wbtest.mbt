@@ -68,8 +68,22 @@ test "hunk validation rejects out-of-range deletions and overlapping sections" {
 
 ///|
 test "context-only hunks are malformed even when both counts match" {
-  assert_true((Some(parse_diff_hunk([b"@@ -1 +1 @@", b" same"], 0, 1)) catch { _ => None }) is None)
-  assert_true((Some(parse_diff_sections(b"--- a/file.mbt\n+++ b/file.mbt\n@@ -1 +1 @@\n same\n")) catch { _ => None }) is None)
+  assert_true(
+    (Some(parse_diff_hunk([b"@@ -1 +1 @@", b" same"], 0, 1)) catch {
+      _ => None
+    })
+    is None,
+  )
+  assert_true(
+    (Some(
+      parse_diff_sections(
+        b"--- a/file.mbt\n+++ b/file.mbt\n@@ -1 +1 @@\n same\n",
+      ),
+    ) catch {
+      _ => None
+    })
+    is None,
+  )
   // A deletion-only hunk is a real edit even though it selects no new lines.
   let (deletion, _) = parse_diff_hunk([b"@@ -1 +0,0 @@", b"-gone"], 0, 1)
   assert_true(deletion.lines.is_empty())

@@ -227,7 +227,8 @@ fn diff_git_header_paths(
     let interpretations = [normalized_paths]
     // Rename/file metadata can prove that a/ and b/ are literal directories.
     // Without hints retain conventional Git prefix handling.
-    if old_hint is Some(_) && new_hint is Some(_) &&
+    if old_hint is Some(_) &&
+      new_hint is Some(_) &&
       normalized_paths != (raw_old, raw_new) {
       interpretations.push((raw_old, raw_new))
     }
@@ -243,9 +244,7 @@ fn diff_git_header_paths(
         _ => false
       }
       if matches {
-        guard candidate is None else {
-          fail("ambiguous Git diff header paths")
-        }
+        guard candidate is None else { fail("ambiguous Git diff header paths") }
         candidate = Some((old_path, new_path))
       }
     }
