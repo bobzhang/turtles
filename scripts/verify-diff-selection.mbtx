@@ -1,0 +1,564 @@
+///|
+import {
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+  "moonbitlang/async@0.22.4",
+  "moonbitlang/async@0.22.4/fs",
+  "moonbitlang/async@0.22.4/process",
+  "moonbitlang/x@0.5.5/path",
+}
+
+///|
+/// End-to-end checks for validated diff selection. Run from the module root:
+/// `moon run scripts/verify-diff-selection.mbtx`.
+
+///|
+fn join(left : String, right : String) -> String {
+  @path.Path(left).join(@path.Path(right)).to_string()
+}
+
+///|
+async fn run_checked(
+  exe : String,
+  args : Array[String],
+  log : String,
+  expected : Int32,
+) -> String {
+  let output = @process.redirect_to_file(log)
+  let code = @process.run(exe, args, stdout=output, stderr=output)
+  let text = @fs.read_file(log).text()
+  guard code == expected else {
+    fail("unexpected exit \{code}, expected \{expected}: \{text}")
+  }
+  text
+}
+
+///|
+fn check_report(
+  report : Json,
+  expected_selected : Int32,
+  expected_reused : Int32,
+) -> Array[String] raise {
+  guard report
+    is {
+      "schema": Number(4.0, ..),
+      "execution": String("completed"),
+      "run_id": String(run_id),
+      "diagnostics": Null,
+      "selection": {
+        "version": Number(1.0, ..),
+        "scope": String("diff"),
+        "discovered": Number(discovered, ..),
+        "diff_excluded": Number(excluded, ..),
+        "target_inactive": Number(inactive, ..),
+        "shard_excluded": Number(0.0, ..),
+        "selected": Number(selected, ..),
+        "classified": Number(classified, ..),
+        "diff": {
+          "fingerprint_algorithm": String("fnv1a64-v1"),
+          "validation": String("represented-new-side-v1"),
+          ..
+        },
+        "shard": Null,
+        ..
+      },
+      "summary": { "reused": Number(reused, ..), .. },
+      "mutants": Array(mutants),
+      ..
+    } else {
+    fail("report is missing schema-4 selection metadata")
+  }
+  guard run_id != "" &&
+    selected.to_int() == expected_selected &&
+    classified == selected &&
+    mutants.length() == expected_selected &&
+    reused.to_int() == expected_reused &&
+    discovered == excluded + inactive + selected else {
+    fail("report selection counts do not balance")
+  }
+  let ids : Array[String] = []
+  for mutant in mutants {
+    guard mutant is { "id": String(id), "path": String("calc.mbt"), .. } else {
+      fail("unexpected mutant row")
+    }
+    ids.push(id)
+  }
+  ids
+}
+
+///|
+fn verify_subset_matches(diff_report : Json, full_report : Json) -> Unit raise {
+  guard diff_report is { "mutants": Array(subset), .. } &&
+    full_report is { "mutants": Array(full), .. } else {
+    fail("missing mutation rows")
+  }
+  for row in subset {
+    guard row is { "id": String(id), "outcome": String(outcome), .. } else {
+      fail("invalid subset row")
+    }
+    let mut found = false
+    for full_row in full {
+      if full_row
+        is { "id": String(full_id), "outcome": String(full_outcome), .. } &&
+        full_id == id {
+        guard full_outcome == outcome else {
+          fail("full and diff verdicts differ for \{id}")
+        }
+        found = true
+        break
+      }
+    }
+    guard found else { fail("full run omitted subset mutant \{id}") }
+  }
+}
+
+///|
+/// Check the completed run against the list and the Git-generated sources.
+fn check_git_generated_report(report : Json, listing : String) -> Unit raise {
+  guard report
+    is {
+      "schema": Number(4.0, ..),
+      "execution": String("completed"),
+      "run_id": String(run_id),
+      "diagnostics": Null,
+      "target": String("native"),
+      "inactive_mutants": Number(0.0, ..),
+      "selection": {
+        "version": Number(1.0, ..),
+        "scope": String("diff"),
+        "discovered": Number(3.0, ..),
+        "diff_excluded": Number(0.0, ..),
+        "target_inactive": Number(0.0, ..),
+        "shard_excluded": Number(0.0, ..),
+        "selected": Number(3.0, ..),
+        "classified": Number(3.0, ..),
+        "diff": {
+          "fingerprint_algorithm": String("fnv1a64-v1"),
+          "fingerprint": String(fingerprint),
+          "validation": String("represented-new-side-v1"),
+          ..
+        },
+        "shard": Null,
+        ..
+      },
+      "summary": {
+        "killed": Number(3.0, ..),
+        "survived": Number(0.0, ..),
+        "timeout": Number(0.0, ..),
+        "unviable": Number(0.0, ..),
+        "reused": Number(0.0, ..),
+        "score": Number(100.0, ..),
+        ..
+      },
+      "mutants": Array(mutants),
+      ..
+    } else {
+    fail(
+      "Git-generated diff report has unexpected schema or selection metadata",
+    )
+  }
+  guard run_id != "" && fingerprint.length() == 16 && mutants.length() == 3 else {
+    fail("Git-generated diff report is incomplete")
+  }
+  let expected : Map[String, Bool] = {
+    "crlf.mbt": true,
+    "tail.mbt": true,
+    "new name あ.mbt": true,
+  }
+  let ids : Map[String, Bool] = Map([])
+  for mutant in mutants {
+    guard mutant
+      is {
+        "id": String(id),
+        "path": String(path),
+        "group": String("arithmetic"),
+        "original": String("+"),
+        "replacement": String("-"),
+        "outcome": String("KILLED"),
+        ..
+      } &&
+      expected.contains(path) &&
+      !ids.contains(id) &&
+      listing.contains("[" + id + "]") else {
+      fail("Git-generated diff report does not match the listed mutants")
+    }
+    expected.remove(path)
+    ids[id] = true
+  }
+  guard expected.is_empty() else {
+    fail("Git-generated diff report omitted a changed source")
+  }
+  let mut listed_count = 0
+  for line in listing.split("\n") {
+    if line.contains("[m-") {
+      listed_count = listed_count + 1
+    }
+  }
+  guard listed_count == mutants.length() else {
+    fail("Git-generated diff list and report contain different mutant sets")
+  }
+}
+
+///|
+/// Generate an actual Git patch rather than approximating Git's quoting,
+/// rename detection, binary format, and missing-final-newline markers.
+async fn git_checked(
+  repo : String,
+  hooks : String,
+  arguments : Array[String],
+  output_path : String,
+  error_path : String,
+) -> Unit {
+  let args = [
+    "-C",
+    repo,
+    "-c",
+    "core.autocrlf=false",
+    "-c",
+    "core.safecrlf=false",
+    "-c",
+    "core.quotepath=true",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "user.name=Turtles fixture",
+    "-c",
+    "user.email=turtles@example.invalid",
+    "-c",
+    "core.hooksPath=" + hooks,
+    "-c",
+    "core.excludesFile=" + join(hooks, "empty-excludes"),
+    "-c",
+    "core.attributesFile=" + join(hooks, "empty-attributes"),
+    "-c",
+    "init.templateDir=" + hooks,
+  ]
+  for argument in arguments {
+    args.push(argument)
+  }
+  let stdout = @process.redirect_to_file(output_path)
+  let stderr = @process.redirect_to_file(error_path)
+  let code = @process.run("git", args, stdout~, stderr~)
+  guard code == 0 else {
+    let error = @fs.read_file(error_path).text()
+    fail("git fixture command failed (\{code}): \{error}")
+  }
+}
+
+///|
+async fn verify_git_generated_diffs(
+  executable : String,
+  temp : String,
+  log : String,
+) -> Unit {
+  let repo = join(temp, "git-generated")
+  let hooks = join(temp, "empty-hooks")
+  let output = join(temp, "git-output")
+  let error = join(temp, "git-error")
+  let patch = join(temp, "git-generated.diff")
+  @fs.mkdir(repo)
+  @fs.mkdir(hooks)
+  git_checked(repo, hooks, ["init", "-q"], output, error)
+  @fs.write_file(
+    join(repo, "moon.mod"),
+    "name = \"fixture/git_diff\"\nversion = \"0.1.0\"\n",
+  )
+  @fs.write_file(join(repo, "moon.pkg"), "")
+  @fs.write_file(
+    join(repo, "arithmetic_test.mbt"),
+    "test \"changed arithmetic\" {\n  inspect(crlf(5), content=\"6\")\n  inspect(tail(5), content=\"6\")\n  inspect(renamed(5), content=\"6\")\n}\n",
+  )
+  @fs.write_file(
+    join(repo, "crlf.mbt"),
+    "pub fn crlf(a : Int) -> Int {\r\n  a - 1\r\n}\r\n",
+  )
+  @fs.write_file(
+    join(repo, "tail.mbt"),
+    "pub fn tail(a : Int) -> Int { a - 1 }",
+  )
+  let common = "// unchanged line 01\n// unchanged line 02\n// unchanged line 03\n// unchanged line 04\n// unchanged line 05\n// unchanged line 06\n// unchanged line 07\n// unchanged line 08\n"
+  let old_name = join(repo, "old name.mbt")
+  let new_name = join(repo, "new name あ.mbt")
+  @fs.write_file(
+    old_name,
+    common + "pub fn renamed(a : Int) -> Int { a - 1 }\n",
+  )
+  @fs.write_file(join(repo, "asset.bin"), b"\x00old\xff")
+  git_checked(repo, hooks, ["add", "-A"], output, error)
+  git_checked(repo, hooks, ["commit", "-q", "-m", "fixture"], output, error)
+  @fs.write_file(
+    join(repo, "crlf.mbt"),
+    "pub fn crlf(a : Int) -> Int {\r\n  a + 1\r\n}\r\n",
+  )
+  @fs.write_file(
+    join(repo, "tail.mbt"),
+    "pub fn tail(a : Int) -> Int { a + 1 }",
+  )
+  @fs.rename(old_name, new_name)
+  @fs.write_file(
+    new_name,
+    common + "pub fn renamed(a : Int) -> Int { a + 1 }\n",
+  )
+  @fs.write_file(join(repo, "asset.bin"), b"\x00new\xfe")
+  git_checked(repo, hooks, ["add", "-A"], output, error)
+  git_checked(
+    repo,
+    hooks,
+    [
+      "diff", "--cached", "--relative", "--no-ext-diff", "--no-textconv", "--no-color",
+      "--binary", "--find-renames",
+    ],
+    patch,
+    error,
+  )
+  let text = @fs.read_file(patch).text()
+  guard text.contains("GIT binary patch") &&
+    text.contains("rename from old name.mbt") &&
+    text.contains("\\ No newline at end of file") &&
+    text.contains("+  a + 1\r\n") else {
+    fail(
+      "Git did not produce the requested binary, rename, CRLF, and no-newline cases",
+    )
+  }
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  let before = @fs.read_file(output).text()
+  let source_snapshots : Map[String, Bytes] = Map([])
+  for
+    name in [
+      "moon.mod", "moon.pkg", "arithmetic_test.mbt", "crlf.mbt", "tail.mbt", "new name あ.mbt",
+      "asset.bin",
+    ] {
+    source_snapshots[name] = @fs.read_file(join(repo, name)).binary()
+  }
+  let listing = run_checked(
+    executable,
+    [
+      "--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--target",
+      "native", "--list",
+    ],
+    log,
+    0,
+  )
+  guard listing.contains("Found 3 mutation(s).") &&
+    listing.contains("crlf.mbt:2:") &&
+    listing.contains("tail.mbt:1:") &&
+    listing.contains("new name あ.mbt:") else {
+    fail("Git-generated diff selected an unexpected set: \{listing}")
+  }
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  guard @fs.read_file(output).text() == before else {
+    fail("diff listing changed the Git fixture")
+  }
+  let run_output = join(temp, "git-generated-run")
+  let run_log = run_checked(
+    executable,
+    [
+      "--dir", repo, "--in-diff", patch, "--operators", "arithmetic", "--target",
+      "native", "--output-dir", run_output,
+    ],
+    log,
+    0,
+  )
+  guard run_log.contains("Baseline: ok") else {
+    fail("Git-generated diff classification skipped the baseline")
+  }
+  let report = @json.parse(
+    @fs.read_file(join(run_output, "report.json")).text(),
+  )
+  check_git_generated_report(report, listing)
+  git_checked(
+    repo,
+    hooks,
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    output,
+    error,
+  )
+  guard @fs.read_file(output).text() == before else {
+    fail("diff classification changed the Git fixture status")
+  }
+  for name, expected in source_snapshots {
+    guard @fs.read_file(join(repo, name)).binary() == expected else {
+      fail("diff classification changed Git fixture file \{name}")
+    }
+  }
+}
+
+///|
+async fn main {
+  let cwd = @env.current_dir().unwrap()
+  let args = @env.args()
+  let temp = @fs.tmpdir(prefix="turtles-diff-e2e")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(temp, recursive=true))
+    let log = join(temp, "command.log")
+    let executable = if args.length() == 2 {
+      args[1]
+    } else {
+      ignore(
+        run_checked(
+          "moon",
+          ["build", "--target", "native", "cmd/turtles"],
+          log,
+          0,
+        ),
+      )
+      join(cwd, "_build/native/debug/build/cmd/turtles/turtles.exe")
+    }
+    let module_dir = join(temp, "module")
+    @fs.mkdir(module_dir)
+    for name in ["moon.mod", "moon.pkg", "calc.mbt", "calc_test.mbt"] {
+      let contents = @fs.read_file(join(cwd, "fixtures/diff-selection/" + name)).binary()
+      @fs.write_file(join(module_dir, name), contents)
+    }
+    let patch = join(temp, "change.diff")
+    let patch_bytes = @fs.read_file(
+      join(cwd, "fixtures/diff-selection/change.diff"),
+    ).binary()
+    @fs.write_file(patch, patch_bytes)
+    let out = join(temp, "out")
+    let base = [
+      "--dir", module_dir, "--in-diff", patch, "--operators", "arithmetic,body",
+      "--target", "native", "--output-dir", out,
+    ]
+    let list_args = base.copy()
+    list_args.push("--list")
+    let listing = run_checked(executable, list_args, log, 0)
+    guard !@fs.exists(join(out, "report.json")) else {
+      fail("--list wrote a report")
+    }
+    ignore(run_checked(executable, base, log, 0))
+    let report_path = join(out, "report.json")
+    let ids = check_report(@json.parse(@fs.read_file(report_path).text()), 4, 0)
+    for id in ids {
+      guard listing.contains(id) else {
+        fail("listing omitted report mutant \{id}")
+      }
+    }
+    let full_out = join(temp, "full-out")
+    let full_args = [
+      "--dir", module_dir, "--operators", "arithmetic,body", "--target", "native",
+      "--output-dir", full_out, "--fail-under", "0",
+    ]
+    ignore(run_checked(executable, full_args, log, 0))
+    verify_subset_matches(
+      @json.parse(@fs.read_file(report_path).text()),
+      @json.parse(@fs.read_file(join(full_out, "report.json")).text()),
+    )
+    let iterate = base.copy()
+    iterate.push("--iterate")
+    ignore(run_checked(executable, iterate, log, 0))
+    ignore(check_report(@json.parse(@fs.read_file(report_path).text()), 4, 4))
+    let test_path = join(module_dir, "calc_test.mbt")
+    let test_source = @fs.read_file(test_path).text()
+    @fs.write_file(test_path, test_source + "// changed test input\n")
+    ignore(run_checked(executable, iterate, log, 0))
+    ignore(check_report(@json.parse(@fs.read_file(report_path).text()), 4, 0))
+    for target in ["js", "all"] {
+      let other = base.copy()
+      other[7] = target
+      let other_out = join(temp, "out-" + target)
+      other[9] = other_out
+      let other_list_args = other.copy()
+      other_list_args.push("--list")
+      let other_list = run_checked(executable, other_list_args, log, 0)
+      ignore(run_checked(executable, other, log, 0))
+      let other_ids = check_report(
+        @json.parse(@fs.read_file(join(other_out, "report.json")).text()),
+        4,
+        0,
+      )
+      for id in other_ids {
+        guard other_list.contains(id) else {
+          fail("target \{target} listing omitted \{id}")
+        }
+      }
+    }
+    @fs.write_file(
+      patch, "--- calc.mbt\n+++ calc.mbt\n@@ -2 +2 @@\n-old\n+  stale\n",
+    )
+    let failed_out = join(temp, "stale-out")
+    let failed_args = base.copy()
+    failed_args[9] = failed_out
+    failed_args.push("--file")
+    failed_args.push("does-not-match")
+    let failed = run_checked(executable, failed_args, log, 2)
+    guard failed.contains("differs from source") &&
+      !failed.contains("Baseline:") &&
+      !@fs.exists(join(failed_out, "report.json")) else {
+      fail("stale diff was not rejected before baseline: \{failed}")
+    }
+    @fs.write_file(
+      patch, "--- calc_test.mbt\n+++ calc_test.mbt\n@@ -1 +1 @@\n-old\n+test \"arithmetic\" {\n",
+    )
+    let test_only = run_checked(executable, base, log, 0)
+    guard test_only.contains("No mutants selected") else {
+      fail("test-only diff did not select zero mutants")
+    }
+    ignore(check_report(@json.parse(@fs.read_file(report_path).text()), 0, 0))
+    @fs.write_file(patch, "")
+    let empty = run_checked(executable, base, log, 0)
+    guard empty.contains("Baseline: ok") && empty.contains("empty-set score") else {
+      fail("empty selection did not run the baseline")
+    }
+    ignore(check_report(@json.parse(@fs.read_file(report_path).text()), 0, 0))
+    let targets_patch = join(temp, "targets.diff")
+    @fs.write_file(
+      targets_patch, "--- native_only.mbt\n+++ native_only.mbt\n@@ -3 +3 @@\n-  a / b\n+  a * b\n--- js_only.mbt\n+++ js_only.mbt\n@@ -3 +3 @@\n-  a + b\n+  a - b\n",
+    )
+    let targets_out = join(temp, "target-partition")
+    let target_args = [
+      "--dir",
+      join(cwd, "fixtures/targets"),
+      "--in-diff",
+      targets_patch,
+      "--target",
+      "native",
+      "--output-dir",
+      targets_out,
+    ]
+    let target_list_args = target_args.copy()
+    target_list_args.push("--list")
+    let target_listing = run_checked(executable, target_list_args, log, 0)
+    guard target_listing.contains("native_only.mbt:3:") &&
+      target_listing.contains("target-inactive: js_only.mbt") else {
+      fail("target-aware listing omitted its active or inactive source")
+    }
+    ignore(run_checked(executable, target_args, log, 0))
+    let target_report = @json.parse(
+      @fs.read_file(join(targets_out, "report.json")).text(),
+    )
+    guard target_report
+      is {
+        "inactive_mutants": Number(1.0, ..),
+        "selection": {
+          "discovered": Number(5.0, ..),
+          "diff_excluded": Number(3.0, ..),
+          "target_inactive": Number(1.0, ..),
+          "selected": Number(1.0, ..),
+          "classified": Number(1.0, ..),
+          ..
+        },
+        "mutants": [
+          { "id": String(target_id), "path": String("native_only.mbt"), .. },
+        ],
+        ..
+      } &&
+      target_listing.contains(target_id) else {
+      fail("target-aware selection counts or listing differ")
+    }
+    verify_git_generated_diffs(executable, temp, log)
+    println("Diff selection E2E passed")
+  })
+}

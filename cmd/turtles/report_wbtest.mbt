@@ -121,7 +121,7 @@ test "visibility_summary splits outcomes by bucket" {
 }
 
 ///|
-async test "write_json_report emits schema-3 JSON" {
+async test "write_json_report emits schema-4 JSON" {
   let temp = @fs.tmpdir(prefix="turtles-test")
   @async.with_task_group(group => {
     group.add_defer(() => @fs.rmdir(temp, recursive=true))
@@ -144,7 +144,11 @@ async test "write_json_report emits schema-3 JSON" {
     write_json_report(path, report)
     let content = @fs.read_file(path).text()
     assert_true(content.has_suffix("\n"))
-    assert_true(content.contains("\"schema\": 3"))
+    assert_true(content.contains("\"schema\": 4"))
+    assert_true(content.contains("\"execution\": \"completed\""))
+    assert_true(content.contains("\"diagnostics\": null"))
+    assert_true(content.contains("\"diff\": null"))
+    assert_true(content.contains("\"shard\": null"))
     assert_true(content.contains("\"module\": \"module/root\""))
     assert_true(content.contains("\"turtles_version\""))
     assert_true(content.contains("\"moon_version\": \"moon 0.1.x\""))
@@ -264,4 +268,39 @@ async test "write_output_dir scopes the self-ignore and diffs timeouts" {
     )
     assert_eq(entries.length(), 2)
   })
+}
+
+///|
+test "schema-4 diff selection counts include target-inactive and excluded mutants" {
+  let results = [report_test_result(Killed), report_test_result(Survived)]
+  let report = build_report(
+    "root",
+    Some("moon"),
+    10L,
+    4L,
+    6L,
+    "module",
+    results,
+    [],
+    {},
+    50.0,
+    run_id="invocation-1",
+    discovered=Some(8),
+    diff_excluded=5,
+    inactive=[mk_mutation("inactive.mbt", 0, 1, "+", "-")],
+    diff_metadata=Some({
+      fingerprint_algorithm: "fnv1a64-v1",
+      fingerprint: "0123456789abcdef",
+      validation: "represented-new-side-v1",
+    }),
+  )
+  assert_eq(report.schema, 4)
+  assert_eq(report.selection.scope, "diff")
+  assert_eq(report.selection.discovered, 8)
+  assert_eq(report.selection.diff_excluded, 5)
+  assert_eq(report.selection.target_inactive, 1)
+  assert_eq(report.selection.selected, 2)
+  assert_eq(report.selection.classified, 2)
+  assert_true(report.selection.diff is Object(_))
+  assert_true(report.selection.shard is Null)
 }

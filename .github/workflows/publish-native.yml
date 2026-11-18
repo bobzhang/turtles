@@ -74,10 +74,11 @@ jobs:
         if: startsWith(matrix.platform, 'windows-')
         uses: ilammy/msvc-dev-cmd@v1
       - uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Resolve dependencies
-        run: |
-          moon update
-          moon install
+        run: moon update
       - name: Build MoonBit native executable
         run: moon build cmd/turtles --target native --release
       - name: Verify Darwin runner architecture
@@ -219,6 +220,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hustcer/setup-moonbit@v1
+        with:
+          version: '0.10.16+b1a0e846e'
+          core-version: '0.10.16+b1a0e846e'
       - name: Validate registry package
         run: |
           moon update
@@ -274,4 +278,4 @@ jobs:
           printf '%s\n' 'pub fn plus(a : Int32, b : Int32) -> Int32 { a + b }' > plus.mbt
           printf '%s\n' 'test "plus" { inspect(plus(1, 2), content="3") }' > plus_test.mbt
           "$temp/bin/turtles" --dir . --timeout 60 --json "$temp/report.json"
-          jq -e --arg v "$version" '.schema == 3 and .turtles_version == $v and (.mutants | length) == 1 and .summary.killed == 1 and .summary.survived == 0 and .summary.timeout == 0 and .summary.unviable == 0' "$temp/report.json"
+          jq -e --arg v "$version" '.schema == 4 and .turtles_version == $v and (.mutants | length) == 1 and .summary.killed == 1 and .summary.survived == 0 and .summary.timeout == 0 and .summary.unviable == 0' "$temp/report.json"

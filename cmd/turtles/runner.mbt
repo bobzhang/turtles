@@ -833,6 +833,8 @@ async fn run_mutations(
   pbt_witness~ : Bool = false,
   pbt_amplify~ : Int32? = None,
   output_dir~ : String = "",
+  diff_snapshots~ : Map[String, Bytes]? = None,
+  expected_files~ : Map[String, String]? = None,
 ) -> (
   Int64,
   Int64,
@@ -851,6 +853,21 @@ async fn run_mutations(
     let reference = path_join(temp, "reference")
     @fs.mkdir(reference, recursive=true)
     copy_tree(root, root, reference)
+    match diff_snapshots {
+      Some(snapshots) => {
+        verify_diff_snapshots(reference, snapshots)
+        verify_diff_snapshots(root, snapshots)
+      }
+      None => ()
+    }
+    match expected_files {
+      Some(files) => {
+        guard fingerprints_match(files, fingerprint_files(reference)) else {
+          fail("module inputs changed while creating the reference workspace")
+        }
+      }
+      None => ()
+    }
     // One dry-run serves both consumers of Moon's plan: active-source
     // discovery under an explicit --target, and the --affected package
     // graph. The selected backend is forwarded to the dry-run itself, so

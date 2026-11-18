@@ -139,18 +139,81 @@ async fn collect_moonbit_files(
 }
 
 ///|
+/// Match sorted depth-first discovery: compare each directory entry name,
+/// rather than comparing the entire relative path as one string.
+fn compare_discovery_paths(left : String, right : String) -> Int32 {
+  let left_parts = left.split("/")
+  let right_parts = right.split("/")
+  while true {
+    match (left_parts.next(), right_parts.next()) {
+      (Some(a), Some(b)) => {
+        let order = a.to_owned().compare(b.to_owned())
+        if order != 0 {
+          return order
+        }
+      }
+      (None, None) => return 0
+      (None, Some(_)) => return -1
+      (Some(_), None) => return 1
+    }
+  } nobreak {
+    0
+  }
+}
+
+///|
 async fn discover_mutations(
   root : String,
   file_filter : String?,
   project_config : ProjectConfig,
   skipped : Array[SkippedFile],
   skipped_blocks : Array[SkippedBlock],
+  snapshot_sources~ : Map[String, Bytes]? = None,
 ) -> Array[Mutation] {
   let files : Array[String] = []
   collect_moonbit_files(root, root, file_filter, project_config, files)
+  // A represented file can disappear during traversal and reappear before
+  // the post-scan verification. Discover it from its validated snapshot in
+  // that case; the caller supplies snapshots only for root-module files.
+  match snapshot_sources {
+    Some(sources) => {
+      // Keep discovery order in the array, but index membership once.
+      let discovered : Map[String, Bool] = Map([])
+      for relative in files {
+        discovered[relative] = true
+      }
+      let mut added = false
+      for relative, _ in sources {
+        let name = @path.Path(relative).basename().to_owned()
+        let filter_matches = match file_filter {
+          Some(filter) => relative.contains(filter)
+          None => true
+        }
+        if !is_test_source(name) &&
+          project_config.path_enabled(relative) &&
+          filter_matches &&
+          !discovered.contains(relative) {
+          files.push(relative)
+          discovered[relative] = true
+          added = true
+        }
+      }
+      if added {
+        files.sort_by(compare_discovery_paths)
+      }
+    }
+    None => ()
+  }
   let mutations : Array[Mutation] = []
   for relative in files {
-    let source = @fs.read_file(path_join(root, relative)).text()
+    let snapshot = match snapshot_sources {
+      Some(sources) => sources.get(relative)
+      None => None
+    }
+    let source = match snapshot {
+      Some(bytes) => @utf8.decode(bytes)
+      None => @fs.read_file(path_join(root, relative)).text()
+    }
     let found = scan_source(relative, source, project_config, skipped_blocks~) catch {
       error => {
         skipped.push({ path: relative, error: error.to_string(), })

@@ -112,6 +112,7 @@ struct Config {
   fail_under : Double?
   list : Bool
   file_filter : String?
+  in_diff : String?
   json_report : String?
   timeout_multiplier : Double?
   iterate : Bool
@@ -277,12 +278,38 @@ struct SkippedBlock {
 }
 
 ///|
+struct JsonDiffSelection {
+  fingerprint_algorithm : String
+  fingerprint : String
+  validation : String
+} derive(ToJson)
+
+///|
+struct JsonSelection {
+  version : Int32
+  scope : String
+  discovered : Int32
+  diff_excluded : Int32
+  target_inactive : Int32
+  shard_excluded : Int32
+  selected : Int32
+  classified : Int32
+  diff : Json
+  shard : Json
+} derive(ToJson)
+
+///|
 struct JsonReport {
   schema : Int32
+  execution : String
+  run_id : String
+  diagnostics : Json
+  selection : JsonSelection
   module_path : String
   turtles_version : String
   moon_version : String?
-  target : String?
+  // Explicit null distinguishes a default-target run from missing provenance.
+  target : Json
   /// Mutants Moon does not compile for the selected target: reported but
   /// never classified, so they cannot distort the score.
   inactive_mutants : Int32

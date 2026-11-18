@@ -391,7 +391,7 @@ def main() -> int:
             env,
         )
         basic_report = read_report(basic)
-        assert basic_report["schema"] == 3
+        assert basic_report["schema"] == 4
         assert len(basic_report["mutants"]) == 6
         assert basic_report["summary"]["survived"] == 0
         assert basic_report["summary"]["timeout"] == 0

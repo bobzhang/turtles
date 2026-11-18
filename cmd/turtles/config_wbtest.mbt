@@ -346,3 +346,21 @@ async test "turtles_version matches moon.mod" {
   let text = @fs.read_file(manifest.unwrap()).text()
   assert_true(text.contains("version = \"\{turtles_version}\""))
 }
+
+///|
+test "in-diff requires one non-empty file path" {
+  assert_eq(
+    parse_args(["turtles", "--in-diff", "change.diff"]).in_diff,
+    Some("change.diff"),
+  )
+  for
+    bad in [
+      ["turtles", "--in-diff"],
+      ["turtles", "--in-diff", ""],
+      ["turtles", "--in-diff", "-"],
+      ["turtles", "--in-diff", "--list"],
+      ["turtles", "--in-diff", "a", "--in-diff", "b"],
+    ] {
+    assert_true((Some(parse_args(bad)) catch { _ => None }) is None)
+  }
+}

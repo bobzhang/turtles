@@ -40,7 +40,7 @@ async fn fingerprint_files(root : String) -> Map[String, String] {
   let fingerprints : Map[String, String] = Map([])
   for relative in files {
     let bytes = @fs.read_file(path_join(root, relative)).binary() catch {
-      _ => continue
+      error => fail("cannot fingerprint \{relative}: \{error}")
     }
     fingerprints[relative] = fingerprint_hex(fnv1a(bytes))
   }
@@ -120,37 +120,79 @@ async fn print_mutation_list(
   mutations : Array[Mutation],
   skipped_blocks : Array[SkippedBlock],
   target : String?,
+  diff_snapshots~ : Map[String, Bytes]? = None,
 ) -> Unit {
-  let (listed, inactive) = match target {
-    Some(_) => {
-      let temp = @fs.tmpdir(prefix="turtles-list")
-      let reference = path_join(temp, "reference")
-      @fs.mkdir(reference, recursive=true)
-      copy_tree(root, root, reference)
-      let plan : MoonPlan = load_moon_plan(reference, target~) catch {
-        error => {
-          force_rmdir(temp) catch {
-            _ => ()
-          }
-          fail("\{error}")
-        }
+  print_mutation_list_interposed(
+    root,
+    mutations,
+    skipped_blocks,
+    target,
+    () => (),
+    diff_snapshots~,
+  )
+}
+
+///|
+/// The callback lets tests deterministically model an edit during planning.
+async fn print_mutation_list_interposed(
+  root : String,
+  mutations : Array[Mutation],
+  skipped_blocks : Array[SkippedBlock],
+  target : String?,
+  after_plan : async () -> Unit,
+  diff_snapshots~ : Map[String, Bytes]? = None,
+) -> Unit {
+  match diff_snapshots {
+    Some(snapshots) => verify_diff_snapshots(root, snapshots)
+    None => ()
+  }
+  let has_snapshots = match diff_snapshots {
+    Some(snapshots) => !snapshots.is_empty()
+    None => false
+  }
+  let (listed, inactive) = if target is None && !has_snapshots {
+    (mutations, [])
+  } else {
+    let temp = @fs.tmpdir(prefix="turtles-list")
+    defer (force_rmdir(temp) catch { _ => () })
+    let reference = path_join(temp, "reference")
+    @fs.mkdir(reference, recursive=true)
+    copy_tree(root, root, reference)
+    match diff_snapshots {
+      Some(snapshots) => {
+        verify_diff_snapshots(reference, snapshots)
+        verify_diff_snapshots(root, snapshots)
       }
-      force_rmdir(temp) catch {
-        _ => ()
-      }
-      let (active, _, inactive) = partition_by_active_source(
-        mutations,
-        [],
-        plan.active_sources,
-      )
-      (active, inactive)
+      None => ()
     }
-    None => (mutations, [])
+    match target {
+      Some(_) => {
+        let plan = load_moon_plan(reference, target~)
+        let (active, _, inactive) = partition_by_active_source(
+          mutations,
+          [],
+          plan.active_sources,
+        )
+        (active, inactive)
+      }
+      None => (mutations, [])
+    }
+  }
+  after_plan()
+  match diff_snapshots {
+    Some(snapshots) => verify_diff_snapshots(root, snapshots)
+    None => ()
   }
   for mutation in listed {
-    println(
-      "\{describe_mutation(mutation)} [\{visibility_name(mutation.visibility)}]",
-    )
+    if diff_snapshots is Some(_) {
+      println(
+        "\{describe_mutation(mutation)} [\{visibility_name(mutation.visibility)}] [\{mutation_id(mutation)}]",
+      )
+    } else {
+      println(
+        "\{describe_mutation(mutation)} [\{visibility_name(mutation.visibility)}]",
+      )
+    }
   }
   for block in skipped_blocks {
     println("  \{block.path}:\{block.line} (skipped)")
@@ -178,16 +220,64 @@ async fn execute_with_config(config : Config) -> Int32 {
     Some(groups) => { ..project_config, operators: Some(groups), }
     None => project_config
   }
+  let diff : (DiffInputs, JsonDiffSelection)? = match config.in_diff {
+    Some(path) => {
+      let raw = read_diff_limited(path, 64 * 1024 * 1024)
+      let sections = parse_diff_sections(raw) catch {
+        error => fail("diff \{path}: \{error}")
+      }
+      let inputs = prepare_diff_inputs(root, path, sections) catch {
+        error => fail("diff \{path}: \{error}")
+      }
+      Some(
+        (
+          inputs,
+          {
+            fingerprint_algorithm: "fnv1a64-v1",
+            fingerprint: fingerprint_hex(fnv1a(raw)),
+            validation: "represented-new-side-v1",
+          },
+        ),
+      )
+    }
+    None => None
+  }
+  let snapshots = match diff {
+    Some((inputs, _)) => Some(inputs.snapshots)
+    None => None
+  }
   let moon_version = capture_moon_version()
   let skipped : Array[SkippedFile] = []
   let skipped_blocks : Array[SkippedBlock] = []
-  let mutations = discover_mutations(
+  let discovered_mutations = discover_mutations(
     root,
     config.file_filter,
     project_config,
     skipped,
     skipped_blocks,
+    snapshot_sources=snapshots,
   )
+  let (mutations, diff_excluded, diff_metadata) = match diff {
+    Some((inputs, metadata)) => {
+      let selection = select_diff_mutations(inputs, discovered_mutations)
+      (selection.mutations, selection.excluded, Some(metadata))
+    }
+    None => (discovered_mutations, 0, None)
+  }
+  match snapshots {
+    Some(snapshot) => verify_diff_snapshots(root, snapshot)
+    None => ()
+  }
+  if diff_metadata is Some(_) {
+    println(
+      "Diff selection: \{mutations.length()} selected, \{diff_excluded} excluded before target filtering (represented new side only).",
+    )
+    if mutations.is_empty() {
+      println(
+        "No mutants selected; use a full run without --in-diff to assess changes outside added source lines, including test-only changes.",
+      )
+    }
+  }
   if mutations.is_empty() {
     println("No mutations found.")
   } else {
@@ -205,7 +295,13 @@ async fn execute_with_config(config : Config) -> Int32 {
     )
   }
   if config.list {
-    print_mutation_list(root, mutations, skipped_blocks, config.target)
+    print_mutation_list(
+      root,
+      mutations,
+      skipped_blocks,
+      config.target,
+      diff_snapshots=snapshots,
+    )
     return 0
   }
 
@@ -214,7 +310,7 @@ async fn execute_with_config(config : Config) -> Int32 {
     Some(dir) => (dir, false)
     None => (path_join(root, ".turtles"), true)
   }
-  let reuse = if config.iterate {
+  let reuse = if config.iterate && !config.affected {
     iterate_reuse(
       output_dir,
       mutations,
@@ -224,6 +320,9 @@ async fn execute_with_config(config : Config) -> Int32 {
       config.pbt_amplify,
     )
   } else {
+    if config.iterate && config.affected {
+      println("Iterate: --affected runs fresh because test scope may differ")
+    }
     Array::make(mutations.length(), None)
   }
   let (
@@ -247,6 +346,8 @@ async fn execute_with_config(config : Config) -> Int32 {
     pbt_witness=config.pbt_witness,
     pbt_amplify=config.pbt_amplify,
     output_dir~,
+    diff_snapshots=snapshots,
+    expected_files=if diff_metadata is Some(_) { Some(files) } else { None },
   )
   let counts = count_outcomes(results)
   let score = mutation_score(counts.0, counts.1, counts.2)
@@ -268,6 +369,16 @@ async fn execute_with_config(config : Config) -> Int32 {
     println("  reused:    \{reused}")
   }
   println("  score:     \{score}%")
+  if diff_metadata is Some(_) {
+    println(
+      "  scope:     score applies only to selected mutants, not the full module",
+    )
+    if results.is_empty() {
+      println(
+        "  empty:     100% is the empty-set score, not a full-module result",
+      )
+    }
+  }
   let public_split = visibility_summary(results, Public)
   if public_split.mutants > 0 {
     let public_viable = public_split.killed +
@@ -307,6 +418,9 @@ async fn execute_with_config(config : Config) -> Int32 {
   } else {
     []
   }
+  let run_temp = @fs.tmpdir(prefix="turtles-run")
+  let run_id = @path.Path(run_temp).basename().to_owned()
+  force_rmdir(run_temp)
   let report = build_report(
     root,
     moon_version,
@@ -322,6 +436,10 @@ async fn execute_with_config(config : Config) -> Int32 {
     target=config.target,
     inactive~,
     properties~,
+    run_id~,
+    discovered=Some(discovered_mutations.length()),
+    diff_excluded~,
+    diff_metadata~,
   )
   write_output_dir(
     output_dir,

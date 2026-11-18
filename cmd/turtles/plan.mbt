@@ -20,15 +20,57 @@ struct TestPlan {
 }
 
 ///|
-fn split_args(line : String) -> Array[String] {
+/// The pinned Moon CLI normalizes dry-run path separators to `/` and emits
+/// Unix shell-quoted arguments on every platform, including Windows:
+/// https://github.com/moonbitlang/moon/blob/2284bd2268138444cd0f02376d5747b78c642561/crates/moonutil/src/path_normalizer.rs#L127-L185
+/// The integration test in plan_wbtest exercises this with the actual CLI.
+fn split_args(line : String) -> Array[String]? {
   let out : Array[String] = []
-  for part in line.split(" ") {
-    let t = part.trim(chars=" '\t\r\n").to_owned()
-    if t != "" {
-      out.push(t)
+  let mut token = StringBuilder()
+  let mut started = false
+  let mut quote = '\u0000'
+  let mut escaped = false
+  for c in line {
+    if escaped {
+      if quote == '"' && c != '"' && c != '\\' && c != '$' && c != '`' {
+        token.write_char('\\')
+      }
+      token.write_char(c)
+      escaped = false
+    } else if quote == '\'' {
+      if c == '\'' {
+        quote = '\u0000'
+      } else {
+        token.write_char(c)
+      }
+    } else if c == '\\' {
+      escaped = true
+      started = true
+    } else if quote == '"' {
+      if c == '"' {
+        quote = '\u0000'
+      } else {
+        token.write_char(c)
+      }
+    } else if c == '\'' || c == '"' {
+      quote = c
+      started = true
+    } else if c == ' ' || c == '\t' || c == '\r' || c == '\n' {
+      if started {
+        out.push(token.to_string())
+        token = StringBuilder()
+        started = false
+      }
+    } else {
+      token.write_char(c)
+      started = true
     }
   }
-  out
+  guard quote == '\u0000' && !escaped else { return None }
+  if started {
+    out.push(token.to_string())
+  }
+  Some(out)
 }
 
 ///|
@@ -75,6 +117,8 @@ struct PlanBuilder {
   raw_sources : Array[String]
   /// how many `moonc build-package` lines the plan contained
   mut build_package_lines : Int32
+  /// A malformed command cannot provide a trustworthy source set.
+  mut malformed_command : Bool
 }
 
 ///|
@@ -97,6 +141,7 @@ fn PlanBuilder::new() -> PlanBuilder {
     pending: [],
     raw_sources: [],
     build_package_lines: 0,
+    malformed_command: false,
   }
 }
 
@@ -184,8 +229,11 @@ fn PlanBuilder::record_line(self : PlanBuilder, line : String) -> Unit {
   if !line.has_prefix("moonc build-package") {
     return
   }
-  let args = split_args(line)
   self.build_package_lines = self.build_package_lines + 1
+  guard split_args(line) is Some(args) else {
+    self.malformed_command = true
+    return
+  }
   // Positional source paths lead the argv: `moonc build-package
   // ./foo.mbt ./bar.mbt -o ...`. The first `-`-prefixed argument ends
   // the source list, which keeps flag *values* (e.g. the file after
@@ -317,6 +365,7 @@ fn reach_from(
 /// A plan with no known packages is useless for `--affected` too, so it
 /// lands in the same fallback.
 fn PlanBuilder::build(self : PlanBuilder) -> TestPlan? {
+  guard !self.malformed_command else { return None }
   guard self.resolve_imports() else { return None }
   guard self.dir_to_fqn.length() > 0 else { return None }
   let observables : Map[String, Map[String, Bool]] = Map([])
@@ -481,6 +530,9 @@ async fn load_moon_plan(
   // all — indeterminate rather than an empty active-source set.
   guard builder.build_package_lines > 0 else {
     fail("moon test --dry-run emitted no build-package commands")
+  }
+  guard !builder.malformed_command else {
+    fail("moon test --dry-run emitted a malformed build-package command")
   }
   {
     active_sources: builder.active_sources(reference),
