@@ -150,3 +150,34 @@ async test "a parent-directory swap between inspection and read can evade rechec
     verify_diff_snapshots(root, snapshots)
   })
 }
+
+///|
+#cfg(not(platform="windows"))
+async test "directory name cache is pass local and never skips symlink checks" {
+  let root = @fs.tmpdir(prefix="turtles-directory-cache")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.write_file(path_join(root, "a.mbt"), "a")
+    @fs.write_file(path_join(root, "b.mbt"), "b")
+    let directory_entries : Map[String, Map[String, Unit]] = Map([])
+    assert_eq(read_diff_source(root, "a.mbt", directory_entries~), Some(b"a"))
+    assert_eq(read_diff_source(root, "b.mbt", directory_entries~), Some(b"b"))
+    assert_eq(directory_entries.length(), 1)
+    verify_diff_snapshots(root, { "a.mbt": b"a" })
+    @fs.write_file(path_join(root, "new.mbt"), "new")
+    // A new pass must see entries absent from the earlier cached listing.
+    verify_diff_snapshots(root, { "new.mbt": b"new" })
+    @fs.remove(path_join(root, "a.mbt"))
+    @fs.symlink(path_join(root, "a.mbt"), target=path_join(root, "b.mbt"))
+    assert_true(
+      (Some(read_diff_source(root, "a.mbt", directory_entries~)) catch {
+        _ => None
+      })
+      is None,
+    )
+    assert_true(
+      (Some(verify_diff_snapshots(root, { "a.mbt": b"b" })) catch { _ => None })
+      is None,
+    )
+  })
+}

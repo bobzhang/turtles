@@ -146,7 +146,11 @@ async fn print_mutation_list_interposed(
     Some(snapshots) => verify_diff_snapshots(root, snapshots)
     None => ()
   }
-  let (listed, inactive) = if target is None && diff_snapshots is None {
+  let has_snapshots = match diff_snapshots {
+    Some(snapshots) => !snapshots.is_empty()
+    None => false
+  }
+  let (listed, inactive) = if target is None && !has_snapshots {
     (mutations, [])
   } else {
     let temp = @fs.tmpdir(prefix="turtles-list")
