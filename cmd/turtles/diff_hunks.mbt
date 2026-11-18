@@ -189,8 +189,14 @@ fn validate_diff_hunk_order(
     guard old_boundary - old_end == new_boundary - new_end else {
       fail("\{path}: hunk \{index + 1}: unequal omitted line counts")
     }
-    guard !(saw_unterminated_old && hunk.old_count > 0) &&
-      !(saw_unterminated_new && hunk.new_count > 0) else {
+    guard (
+        !saw_unterminated_old ||
+        (hunk.old_count == 0 && old_boundary == old_end)
+      ) &&
+      (
+        !saw_unterminated_new ||
+        (hunk.new_count == 0 && new_boundary == new_end)
+      ) else {
       fail("\{path}: hunk \{index + 1}: range follows no-newline marker")
     }
     saw_unterminated_old = saw_unterminated_old || hunk.old_unterminated

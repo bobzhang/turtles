@@ -102,3 +102,22 @@ test "hunk omitted lines must agree before and between edits" {
   let sections = parse_diff_sections(valid)
   assert_eq(sections[0].hunks.length(), 2)
 }
+
+///|
+test "zero-count hunks cannot skip beyond a declared old or new EOF" {
+  for
+    patch in [
+      b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b\n@@ -2,0 +3 @@\n+c\n",
+      b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1 +1 @@\n-a\n+b\n\\ No newline at end of file\n@@ -3 +2,0 @@\n-c\n",
+    ] {
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+  let insertion = parse_diff_sections(
+    b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b\n@@ -1,0 +2 @@\n+c\n",
+  )
+  assert_eq(insertion[0].hunks.length(), 2)
+  let deletion = parse_diff_sections(
+    b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1 +1 @@\n-a\n+b\n\\ No newline at end of file\n@@ -2 +1,0 @@\n-c\n",
+  )
+  assert_eq(deletion[0].hunks.length(), 2)
+}
