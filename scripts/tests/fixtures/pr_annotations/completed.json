@@ -1,0 +1,138 @@
+{
+  "schema": 4,
+  "execution": "completed",
+  "run_id": "turtles-run-fixture",
+  "diagnostics": null,
+  "selection": {
+    "version": 1,
+    "scope": "diff",
+    "discovered": 7,
+    "diff_excluded": 2,
+    "target_inactive": 1,
+    "shard_excluded": 0,
+    "selected": 4,
+    "classified": 4,
+    "diff": {
+      "fingerprint_algorithm": "fnv1a64-v1",
+      "fingerprint": "b880947d6b35da72",
+      "validation": "represented-new-side-v1"
+    },
+    "shard": null
+  },
+  "module": "/work/checkout/example",
+  "turtles_version": "0.4.7",
+  "moon_version": "moon 0.1.fixture",
+  "target": "native",
+  "inactive_mutants": 1,
+  "inactive_files": [
+    "idle.mbt"
+  ],
+  "baseline_duration_ms": "10",
+  "baseline_check_ms": "3",
+  "baseline_test_ms": "6",
+  "test_scope": "module",
+  "mutants": [
+    {
+      "id": "m-99e1ef3ac38106f0",
+      "path": "calc.mbt",
+      "line": 4,
+      "column": 9,
+      "offset": 78,
+      "end": 79,
+      "group": "arithmetic",
+      "visibility": "public",
+      "original": "+",
+      "replacement": "-",
+      "outcome": "UNVIABLE",
+      "duration_ms": "8",
+      "reused": false
+    },
+    {
+      "id": "m-e7142a7b16419848",
+      "path": "calc.mbt",
+      "line": 4,
+      "column": 5,
+      "offset": 74,
+      "end": 75,
+      "group": "arithmetic",
+      "visibility": "public",
+      "original": "+",
+      "replacement": "-",
+      "outcome": "TIMEOUT",
+      "duration_ms": "8",
+      "reused": false
+    },
+    {
+      "id": "m-a817911063c6a4cd",
+      "path": "calc.mbt",
+      "line": 3,
+      "column": 13,
+      "offset": 66,
+      "end": 67,
+      "group": "arithmetic",
+      "visibility": "public",
+      "original": "*",
+      "replacement": "/",
+      "outcome": "KILLED",
+      "duration_ms": "8",
+      "reused": false,
+      "killed_by": [],
+      "attribution": "unavailable"
+    },
+    {
+      "id": "m-c742f68b57434bd4",
+      "path": "calc.mbt",
+      "line": 2,
+      "column": 13,
+      "offset": 50,
+      "end": 51,
+      "group": "arithmetic",
+      "visibility": "public",
+      "original": "+",
+      "replacement": "-",
+      "outcome": "SURVIVED",
+      "duration_ms": "8",
+      "reused": false
+    }
+  ],
+  "summary": {
+    "killed": 1,
+    "survived": 1,
+    "timeout": 1,
+    "unviable": 1,
+    "score": 33.333333333333336,
+    "reused": 0,
+    "kills_by_kind": {
+      "property": 0,
+      "snapshot": 0,
+      "doc_test": 0,
+      "assertion": 0
+    },
+    "property_only_kills": 0,
+    "score_public": {
+      "mutants": 4,
+      "killed": 1,
+      "survived": 1,
+      "timeout": 1,
+      "unviable": 1,
+      "score": 33.333333333333336
+    },
+    "score_private": {
+      "mutants": 0,
+      "killed": 0,
+      "survived": 0,
+      "timeout": 0,
+      "unviable": 0,
+      "score": 100
+    }
+  },
+  "skipped_files": [],
+  "files": {
+    "calc.mbt": "742329e1d298fece",
+    "calc_test.mbt": "c97ac4726fa4656a",
+    "idle.mbt": "554c7b57dc9a6040",
+    "moon.mod": "95cf0fb8d12cd3c4",
+    "moon.pkg": "cbf29ce484222325"
+  },
+  "regressions": []
+}
