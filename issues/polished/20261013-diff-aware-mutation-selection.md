@@ -47,12 +47,14 @@ GitHub連携、PR自動検出、branch名解決、patch適用、coverage-based t
 
 `Config.in_diff : String?` を追加する。初版はCLIだけで、TOMLキーや標準入力 `-` は追加しない。
 相対的なFILEは起動時cwd基準、diff内のパスは `--dir` が選ぶモジュール基準。
-値欠落、空値、重複指定、読込不能、64 MiB超の入力は終了2。引数検証とdiff検証をbaselineより先に行う。
+値欠落、空値、重複指定、読込不能、64 MiB超、または200,000物理行超（末尾の改行なし行も1行）の入力は終了2。行数上限は行ごとのコピーやhunk recordを割り当てる前に検証する。引数検証とdiff検証をbaselineより先に行う。
 
-1. 通常のGit unified diffとprefixなしunified diffを受理する。0 byteのdiffは有効な空選択。
+1. 通常のGit unified diffとprefixなしunified diffを受理する。
+   生成時は `git -c diff.suppressBlankEmpty=false diff ...` を使う。空context行のprefix省略形式は対象外。0 byteのdiffは有効な空選択。
    非空の未認識テキストを空選択へ変換しない。`diff --cc` / `diff --combined` は拒否する。
-2. `---` / `+++` の対でnew側パスを選ぶ。対応するold/newが `a/` / `b/` を持つ場合だけ
-   その1階層を除く。片側が `/dev/null` の場合は他側の対応する `a/` または `b/` を除く。
+2. `---` / `+++` の対でnew側パスを選ぶ。standalone unified sectionでは全パスをliteralとして保持する。
+   `a/` / `b/` prefixを除くには対応を確認できる完全な `diff --git` headerが必要。
+   prefix付きhunkだけを切り出した場合もliteralパスとして扱い、探索で補正しない。
    `/dev/null` は特別値であり実ファイルを読まない。
    Gitの `diff --git`、rename、mode情報との不一致は拒否する。prefixを推測して探索しない。
 3. Gitの引用パスは `\\`、`\"`、制御文字escape、3桁octalのbyte列として復号し、UTF-8を検証する。

@@ -4,10 +4,14 @@
 
 ### Added
 
+- `--in-diff FILE` validates represented new-side unified diff lines and restricts mutations to intersecting byte spans. Diff runs report their partial selection and preserve the baseline and target filters.
+
 - Opt-in `boundary` operator group: `< -> <=`, `> -> >=`, `<= -> <`, and `>= -> >` mutants that only differ at the equality point. Enable it with `--operators boundary` or `operators = ["boundary"]` in `turtles.toml`; `comparison,boundary` generates both edits at each comparison. Reports keep `group: "boundary"`, and `--iterate` only reuses boundary rows whose identity matches.
 - `fixtures/boundary` plus `scripts/verify-boundary.mbtx`, exercised in CI, pin the group's observable behavior: a default run emits no boundary row.
 
 ### Changed
+
+- Source CI and future release builds follow the latest stable MoonBit toolchain. Update lexer to 0.4.5, parser to 0.4.9, moon_config to 0.4.6 and prettyprinter to 0.4.12; migrate manifest AST handling, formatting and deprecated APIs. Historical published-0.4.7 consumer checks retain their compatible toolchain pin.
 
 - An unset operator list now resolves through an exhaustive `operator_group_default_enabled`, so a new group is opt-in by explicit decision instead of by falling through a "not `Body`" test. Behavior is unchanged: `comparison`, `boolean`, `arithmetic`, `literal`, and `condition` run by default.
 
@@ -19,7 +23,11 @@
 
 ### Security
 
+- Document that `--in-diff` path checks and reads are not atomic: concurrent symlink replacement can redirect a read even when later snapshot checks pass. Use a checkout protected from concurrent untrusted changes.
+
 ### Migration
+
+- Reports now use schema 4 with explicit execution and selection metadata. `--iterate` does not reuse schema 3 reports; existing verdicts are classified again. The separate MoonBit verification profile remains pinned to its historical schema 3 executable.
 
 ## 0.4.7
 

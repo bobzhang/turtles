@@ -2,8 +2,7 @@
 
 `scripts/verify_moon_profile.py` is an explicitly invoked **companion CLI** in
 the turtles source checkout. It is not an installed native turtles flag or a
-Mooncakes release. A plain `turtles` invocation, its runtime score, schema-3
-report, iteration rules, and old schema-2 project ratchets are unchanged.
+Mooncakes release. The companion does not alter a plain `turtles` invocation, its runtime score, report, iteration rules, or old schema-2 project ratchets. Current turtles reports use schema 4; this fixed profile still requires its separately pinned schema-3 executable.
 
 The first profile is intentionally limited to the GPUI source-equivalent
 `TextRange::length`, `utf8_scalar_width`, and `utf16_scalar_width` helpers plus
@@ -34,7 +33,7 @@ is not an automatic upgrade or a generic external-command hook.
 
 Copy `verification-profiles/moonbit-composition.example.json` outside the
 source checkout and replace its placeholder with the SHA-256 of a reviewed
-turtles **schema-3** executable built from this repository. This intentionally
+turtles **schema-3** executable built from the profile’s pinned historical revision. This intentionally
 does not accept the historical schema-2 registry executable as the new profile.
 Set `pilot_revision` to the reviewed pair present in the source project.
 
@@ -42,7 +41,7 @@ Set `pilot_revision` to the reviewed pair present in the source project.
 python3 scripts/verify_moon_profile.py \
   --profile /absolute/reviewed-profile.json \
   --source-root /absolute/gpui-checkout \
-  --turtles-bin /absolute/schema3-turtles \
+  --turtles-bin /absolute/pinned-schema3-turtles \
   --artifact-dir /absolute/new-owned-run-directory \
   --moon-home /absolute/pinned-moon-home \
   --why3 /absolute/official-why3-prefix/bin/why3 \

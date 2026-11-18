@@ -52,6 +52,8 @@ turtles --dir .            # or: turtles --list to preview the mutation set
 
 Every mutant runs in its own temporary workspace; on a small module the whole run takes seconds.
 
+The examples below describe the unreleased development version: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. Source CI and future release builds follow the latest stable MoonBit compiler/core. This branch updates the lexer/parser dependency family and has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. The already published 0.4.7 registry package still requires the older `0.10.16+b1a0e846e` toolchain; its checkout-free historical-release CI intentionally retains that pin until a compatible version is published.
+
 ## Typical local usage
 
 ```sh
@@ -61,7 +63,7 @@ turtles --dir . --file src/parser  # only mutate paths containing TEXT
 turtles --dir . --target native     # run only what moon compiles for native
 turtles --dir . --target js --list  # preview the js-active mutation set
 turtles --dir . --timeout 120      # per-command timeout in seconds (default 60)
-turtles --dir . --json report.json # machine-readable report (schema 3)
+turtles --dir . --json report.json # machine-readable report (schema 4)
 turtles --dir . --iterate          # reuse KILLED/UNVIABLE outcomes from the last run
 turtles --dir . --affected         # run only tests that can observe each mutant
 turtles --dir . --emit-regressions # write regression-test templates for property kills
@@ -146,11 +148,17 @@ into another session or process group are outside that supervisor's scope.
 
 After the summary counts, every `SURVIVED`/`TIMEOUT` mutant is reprinted under `Mutants needing attention:` so the actionable list is at the end of the output.
 
-Every run writes a schema-`3` report and per-survivor unified diffs to `<dir>/.turtles/` (which git-ignores itself): `report.json` plus `survivors/<id>.diff` for each surviving or timed-out mutant. The report adds stable mutant `id`s (FNV-1a over path + byte offsets + original + replacement + group), per-phase baseline durations (`baseline_check_ms`/`baseline_test_ms`), `test_scope`, a `files` fingerprint map, `skipped_files`, `reused` counts, the selected `target` (`null` when `--target` is omitted), and `inactive_mutants`/`inactive_files` for mutants Moon does not compile under that target:
+Every run writes a schema-`4` report and per-survivor unified diffs to `<dir>/.turtles/` (which git-ignores itself): `report.json` plus `survivors/<id>.diff` for each surviving or timed-out mutant. The report adds stable mutant `id`s (FNV-1a over path + byte offsets + original + replacement + group), per-phase baseline durations (`baseline_check_ms`/`baseline_test_ms`), `test_scope`, a `files` fingerprint map, `skipped_files`, `reused` counts, the selected `target` (`null` when `--target` is omitted), and `inactive_mutants`/`inactive_files` for mutants Moon does not compile under that target:
 
 ```json
 {
-  "schema": 3,
+  "schema": 4,
+  "execution": "completed",
+  "run_id": "turtles-run.example",
+  "diagnostics": null,
+  "selection": { "version": 1, "scope": "configured", "discovered": 7,
+    "diff_excluded": 0, "target_inactive": 1, "shard_excluded": 0,
+    "selected": 6, "classified": 6, "diff": null, "shard": null },
   "module": "/abs/path",
   "turtles_version": "0.4.7",
   "moon_version": "moon 0.1.20260920 (914d7da 2026-09-20) ~/.moon/bin/moon",
@@ -172,6 +180,16 @@ Every run writes a schema-`3` report and per-survivor unified diffs to `<dir>/.t
 }
 ```
 
+### Restrict mutations to a diff
+
+Run `git -c diff.suppressBlankEmpty=false diff --find-renames --relative --no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/ BASE...HEAD -- . > change.diff`, then pass `--in-diff change.diff`. The diff path is relative to the current directory; paths inside it are relative to `--dir` and must match filesystem entry spelling, including case. Turtles validates the represented new-side context and additions against the current source, then selects mutants whose byte spans intersect added lines. It does not run Git or apply the patch. Invalid input, paths identified as unsafe, or mismatched represented lines cause exit 2 before the baseline; an empty diff is valid. Input is limited to 64 MiB and 200,000 physical lines (including an unterminated final line); larger patches fail closed before per-line parsing allocations. Split larger changes into smaller patches or omit `--in-diff` for a full run. The command explicitly disables Git’s blank-context prefix suppression, which this parser does not support. Standalone unified sections retain all paths literally, including `a/` or `b/` directories. Prefix removal requires a full `diff --git` header; extracting prefixed hunks without that header makes their paths literal. The recommended Git command above is unchanged.
+
+Path inspection and source reads are separate filesystem operations. If another process can modify the module concurrently, it can temporarily replace a checked file or parent directory with a symlink and cause a read outside the module. Snapshot rechecks can detect persistent mismatches, but cannot prevent the redirected read or reliably detect a transient replacement. Run diff selection only on a checkout that untrusted processes cannot modify during the run; turtles does not lock the working tree.
+
+Diff selection is partial: deletions, unchanged lines, test-only and manifest-only changes cannot establish a full-module result. An empty selection still runs the baseline and its 100% score describes the empty set. Omit `--in-diff` for a full configured run. The report records the scope, exclusions, selected and classified counts, and an FNV-1a fingerprint of the raw diff. The fingerprint detects ordinary changes but is not a security hash. Validation covers only the represented new side, not the entire original revision or changes outside the diff.
+
+Schema 4 adds `execution`, `run_id`, `diagnostics`, and `selection`. Existing schema 3 reports cannot be reused by `--iterate`; the first run after upgrading classifies mutants again. Reuse from completed schema 4 subset runs still requires unchanged inputs and matching tool versions and mutant identities.
+
 ### Survivor analysis (opt-in)
 
 Three opt-in analyses split the `SURVIVED` bucket — all off by default, so a plain run changes nothing:
@@ -180,9 +198,11 @@ Three opt-in analyses split the `SURVIVED` bucket — all off by default, so a p
 - `--pbt-witness` runs a differential witness on eligible survivors: for each surviving `fn f`, a temporary workspace gets a renamed copy of the original body plus a white-box `@quickcheck.check(args => f(args) == f__turtles_orig(args))` and a determinism guard. If QuickCheck falsifies the equivalence, the counterexample is recorded as `"witness"` — strong evidence the mutant is a real gap. Ineligible survivors report `witness_skipped`: `"effects-unknown"` (mutable state, async, non-core calls, trait dispatch — anything the call-graph analysis cannot prove pure), `"recursive"` (the fn sits in a recursive SCC — an unbounded self-rewriting copy could diverge), `"cfg"` (a `#cfg(...)` declaration), `"nondeterministic"` (the guard falsified — `f(args) != f(args)`), `"name-collision"` (no collision-safe helper name left after 16 tries) or `"harness-error"`. `witness`/`witness_skipped` fields appear only on survivors the analysis ran for; `witness: "none"` means the harness ran and did not falsify.
 - `--pbt-amplify <N>` re-runs each survivor's module tests with the property budget scaled ×`N` (`count = 100*N`, or `existing*N` for explicit counts) and seeds shifted, in a temporary workspace. A mutant killed only after amplification reports `KILLED` with `"amplified": true`.
 
+Purity inference remains conservative when visible imports have conditions: if an external call's package identity cannot be established, it is skipped as `effects-unknown`, not treated as pure or given a witness. QuickCheck binding is a separate, narrower lookup: unrelated conditions and conditions proven false for an explicitly selected target (or constant false conditions) do not suppress an otherwise unambiguous binding. An unspecified target is not guessed. If source tests are recompiled under white-box imports with incompatible aliases, the source-appended harness can remain unsupported and reports `harness-error`, never `witness: "none"`.
+
 All three respect `--target`: every Moon invocation is forwarded through the same target-aware helper, target-inactive mutants get no analysis, and `--iterate` never reuses witness/suggestion/amplification results across a target change. The witness harness is appended to the mutated copy of the function's own file, so it inherits that file's `targets` applicability — `--target all` compiles it on every backend where the function exists.
 
-`--output-dir <path>` relocates the report directory; `--json` additionally writes a plain report anywhere for CI. `--iterate` loads the previous `<output-dir>/report.json` and reuses `KILLED`/`UNVIABLE` outcomes for mutants whose file content hash and identity tuple are unchanged (marked `"reused": true`); `SURVIVED`/`TIMEOUT` mutants always re-run. Reuse is refused wholesale when the schema, turtles version, moon version, or selected target differ, or when *any* fingerprinted file changed since the report — sources, tests, `moon.pkg`, `moon.mod`, `turtles.toml` — since a verdict may owe its outcome to a file the mutant never touches. `--affected` is opt-in test selection: it parses `moon test --dry-run` to learn the package graph and runs `moon test -p` on just the mutated package plus packages whose test targets transitively link it, falling back to a module-wide run whenever resolution is uncertain. Under an explicit `--target` that same target-aware dry-run is what marks inactive mutants, so selection and test planning can never disagree. An empty mutation set still produces a schema-3 report with `mutants: []`; `--list` never runs tests.
+`--output-dir <path>` relocates the report directory; `--json` additionally writes a plain report anywhere for CI. `--iterate` loads the previous `<output-dir>/report.json` and reuses `KILLED`/`UNVIABLE` outcomes for mutants whose file content hash and identity tuple are unchanged (marked `"reused": true`); `SURVIVED`/`TIMEOUT` mutants always re-run. Reuse is refused wholesale for affected-scope runs, incomplete reports, unknown Moon versions, or when the schema, turtles version, moon version, or selected target differ, or when *any* fingerprinted file changed since the report — sources, tests, `moon.pkg`, `moon.mod`, `turtles.toml` — since a verdict may owe its outcome to a file the mutant never touches. `--affected` is opt-in test selection: it parses `moon test --dry-run` to learn the package graph and runs `moon test -p` on just the mutated package plus packages whose test targets transitively link it, falling back to a module-wide run whenever resolution is uncertain. Under an explicit `--target` that same target-aware dry-run is what marks inactive mutants, so selection and test planning can never disagree. An empty mutation set still produces a schema-4 report with `mutants: []`; `--list` never runs tests.
 
 ## Kill attribution and determinism
 
@@ -286,7 +306,7 @@ moon run cmd/turtles -- --dir fixtures/boundary --operators boundary --timeout 6
 moon run scripts/verify-boundary.mbtx -- /tmp/boundary-report.json
 ```
 
-The real fixture E2E also validates schema-3 JSON report generation, deterministic ordering under `--jobs`, `--fail-under` exit codes, and target-aware selection on `fixtures/targets` (`--target native|js|all` for `--list` and full runs, including cross-target `--iterate` reuse refusal). On `fixtures/boundary`, `scripts/verify-boundary.mbtx` checks that the `--operators boundary` run emits exactly the four equality-only mutants with the verdicts the fixture's tests dictate (two survivors, exit `1`); CI additionally asserts that the default run on the same fixture emits only comparison inversions.
+The real fixture E2E also validates schema-4 JSON report generation, deterministic ordering under `--jobs`, `--fail-under` exit codes, and target-aware selection on `fixtures/targets` (`--target native|js|all` for `--list` and full runs, including cross-target `--iterate` reuse refusal). On `fixtures/boundary`, `scripts/verify-boundary.mbtx` checks that the `--operators boundary` run emits exactly the four equality-only mutants with the verdicts the fixture's tests dictate (two survivors, exit `1`); CI additionally asserts that the default run on the same fixture emits only comparison inversions.
 
 ## Planned follow-ups
 

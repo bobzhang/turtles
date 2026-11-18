@@ -1,4 +1,5 @@
 ///|
+#derive(Eq)
 enum OperatorGroup {
   Comparison
   Boolean
@@ -7,7 +8,7 @@ enum OperatorGroup {
   Condition
   Body
   Boundary
-} derive(Eq)
+}
 
 ///|
 fn operator_group_from_string(value : String) -> OperatorGroup raise {
@@ -112,6 +113,7 @@ struct Config {
   fail_under : Double?
   list : Bool
   file_filter : String?
+  in_diff : String?
   json_report : String?
   timeout_multiplier : Double?
   iterate : Bool
@@ -125,6 +127,7 @@ struct Config {
 }
 
 ///|
+#derive(Eq)
 struct Mutation {
   path : String
   start : Int32
@@ -135,15 +138,16 @@ struct Mutation {
   original : String
   replacement : String
   visibility : MutantVisibility
-} derive(Eq)
+}
 
 ///|
+#derive(Eq)
 enum Outcome {
   Killed
   Survived
   Timeout
   Unviable
-} derive(Eq)
+}
 
 ///|
 fn outcome_name(outcome : Outcome) -> String {
@@ -161,11 +165,12 @@ fn outcome_name(outcome : Outcome) -> String {
 /// and the implicit default are private. `test` blocks carry no
 /// visibility marker, so their mutants sit in their own bucket, outside
 /// the public/private score split entirely.
+#derive(Eq, Debug)
 enum MutantVisibility {
   Public
   Private
   Test
-} derive(Eq, Debug)
+}
 
 ///|
 fn visibility_name(visibility : MutantVisibility) -> String {
@@ -195,6 +200,7 @@ struct MutationResult {
 }
 
 ///|
+#derive(ToJson)
 struct JsonMutation {
   id : String
   path : String
@@ -215,17 +221,19 @@ struct JsonMutation {
   witness : String?
   witness_skipped : String?
   amplified : Bool?
-} derive(ToJson)
+}
 
 ///|
+#derive(Debug, ToJson)
 struct JsonKillCounts {
   property : Int32
   snapshot : Int32
   doc_test : Int32
   assertion : Int32
-} derive(Debug, ToJson)
+}
 
 ///|
+#derive(ToJson)
 struct JsonSummary {
   killed : Int32
   survived : Int32
@@ -237,13 +245,14 @@ struct JsonSummary {
   property_only_kills : Int32
   score_public : JsonVisibilitySummary
   score_private : JsonVisibilitySummary
-} derive(ToJson)
+}
 
 ///|
 /// Outcome tallies and score for one visibility bucket — the same
 /// killed-over-viable rule as the headline score, restricted to that
 /// bucket's mutants. Test-block mutants are counted in the headline
 /// score only; they appear in neither bucket.
+#derive(Debug, ToJson)
 struct JsonVisibilitySummary {
   mutants : Int32
   killed : Int32
@@ -251,13 +260,14 @@ struct JsonVisibilitySummary {
   timeout : Int32
   unviable : Int32
   score : Double
-} derive(Debug, ToJson)
+}
 
 ///|
+#derive(ToJson)
 struct JsonSkippedFile {
   path : String
   error : String
-} derive(ToJson)
+}
 
 ///|
 /// A file the scanner could not parse. Skipping keeps the rest of the
@@ -277,12 +287,41 @@ struct SkippedBlock {
 }
 
 ///|
+#derive(ToJson)
+struct JsonDiffSelection {
+  fingerprint_algorithm : String
+  fingerprint : String
+  validation : String
+}
+
+///|
+#derive(ToJson)
+struct JsonSelection {
+  version : Int32
+  scope : String
+  discovered : Int32
+  diff_excluded : Int32
+  target_inactive : Int32
+  shard_excluded : Int32
+  selected : Int32
+  classified : Int32
+  diff : Json
+  shard : Json
+}
+
+///|
+#derive(ToJson(fields(module_path(rename="module"))))
 struct JsonReport {
   schema : Int32
+  execution : String
+  run_id : String
+  diagnostics : Json
+  selection : JsonSelection
   module_path : String
   turtles_version : String
   moon_version : String?
-  target : String?
+  // Explicit null distinguishes a default-target run from missing provenance.
+  target : Json
   /// Mutants Moon does not compile for the selected target: reported but
   /// never classified, so they cannot distort the score.
   inactive_mutants : Int32
@@ -299,11 +338,12 @@ struct JsonReport {
   regressions : Array[String]
   /// live `properties/<id>.mbt` files written by --emit-properties
   properties : Array[String]?
-} derive(ToJson(fields(module_path(rename="module"))))
+}
 
 ///|
+#derive(Eq)
 enum CommandResult {
   CommandSuccess
   CommandFailure
   CommandTimeout
-} derive(Eq)
+}

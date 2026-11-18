@@ -17,6 +17,7 @@ fn print_help() -> Unit {
       #|  -j, --jobs <N>          Run up to N mutants in parallel (default: 1)
       #|      --fail-under <PCT>  Exit 1 if the mutation score is below PCT (0-100)
       #|      --file <TEXT>       Only mutate source paths containing TEXT
+      #|      --in-diff <FILE>    Select mutants intersecting validated added lines
       #|      --json <PATH>       Write a JSON report to PATH
       #|      --output-dir <DIR>  Report + survivor diffs (default: <dir>/.turtles)
       #|      --iterate           Reuse KILLED/UNVIABLE from the previous report
@@ -44,6 +45,7 @@ fn parse_args(args : Array[String]) -> Config raise {
   let mut fail_under : Double? = None
   let mut list = false
   let mut file_filter : String? = None
+  let mut in_diff : String? = None
   let mut json_report : String? = None
   let mut timeout_multiplier : Double? = None
   let mut iterate = false
@@ -103,6 +105,17 @@ fn parse_args(args : Array[String]) -> Config raise {
         guard i + 1 < args.length() else { fail("--file requires text") }
         i = i + 1
         file_filter = Some(args[i])
+      }
+      "--in-diff" => {
+        guard in_diff is None else { fail("--in-diff may only be given once") }
+        guard i + 1 < args.length() else { fail("--in-diff requires a path") }
+        i = i + 1
+        guard args[i] != "" && args[i] != "-" && !args[i].has_prefix("--") else {
+          fail(
+            "--in-diff requires a non-empty file path (standard input is not supported)",
+          )
+        }
+        in_diff = Some(args[i])
       }
       "--json" => {
         guard i + 1 < args.length() else { fail("--json requires a path") }
@@ -191,6 +204,7 @@ fn parse_args(args : Array[String]) -> Config raise {
     fail_under,
     list,
     file_filter,
+    in_diff,
     json_report,
     timeout_multiplier,
     iterate,

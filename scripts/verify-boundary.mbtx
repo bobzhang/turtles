@@ -87,7 +87,7 @@ fn valid_boundary_row(
 ///|
 fn valid_boundary_report(report : Json) -> Bool {
   guard report is Object(fields) else { return false }
-  if number_field(fields, "schema") != Some(3) {
+  if number_field(fields, "schema") != Some(4) {
     return false
   }
   guard array_field(fields, "mutants") is Some(mutants) else { return false }
@@ -132,7 +132,7 @@ fn boundary_report(
     }
     json_rows.write_string(rows[i])
   }
-  "{\"schema\":3,\"mutants\":[\{json_rows}],\"summary\":{\"killed\":\{killed},\"survived\":\{survived},\"timeout\":0,\"unviable\":0,\"score\":50}}"
+  "{\"schema\":4,\"mutants\":[\{json_rows}],\"summary\":{\"killed\":\{killed},\"survived\":\{survived},\"timeout\":0,\"unviable\":0,\"score\":50}}"
 }
 
 ///|

@@ -21,7 +21,7 @@ fn valid_fixture_report(report : Json) -> Bool {
       },
       ..
     } =>
-      schema == 3.0 &&
+      schema == 4.0 &&
       mutants.length() == 6 &&
       killed == 6.0 &&
       survived == 0.0 &&
@@ -34,7 +34,7 @@ fn valid_fixture_report(report : Json) -> Bool {
 ///|
 test "validates a complete six-kill fixture report" {
   let good = @json.parse(
-    "{\"schema\":3,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}",
+    "{\"schema\":4,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}",
   )
   assert_true(valid_fixture_report(good))
 }
@@ -42,25 +42,25 @@ test "validates a complete six-kill fixture report" {
 ///|
 test "rejects missing, surviving, and incomplete mutants" {
   let wrong_count = @json.parse(
-    "{\"schema\":3,\"mutants\":[],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}",
+    "{\"schema\":4,\"mutants\":[],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}",
   )
   assert_true(!valid_fixture_report(wrong_count))
   let survivor = @json.parse(
-    "{\"schema\":3,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":5,\"survived\":1,\"timeout\":0,\"unviable\":0}}",
+    "{\"schema\":4,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":5,\"survived\":1,\"timeout\":0,\"unviable\":0}}",
   )
   assert_true(!valid_fixture_report(survivor))
   let missing_outcome = @json.parse(
-    "{\"schema\":3,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0}}",
+    "{\"schema\":4,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0}}",
   )
   assert_true(!valid_fixture_report(missing_outcome))
 }
 
 ///|
 test "rejects schema and summary corruption" {
-  let good = "{\"schema\":3,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}"
+  let good = "{\"schema\":4,\"mutants\":[{},{},{},{},{},{}],\"summary\":{\"killed\":6,\"survived\":0,\"timeout\":0,\"unviable\":0}}"
   for
     (field, value, replacement) in [
-      ("schema", "3", "2"),
+      ("schema", "4", "3"),
       ("killed", "6", "5"),
       ("survived", "0", "1"),
       ("timeout", "0", "1"),

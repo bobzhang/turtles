@@ -532,3 +532,103 @@ async test "dangling symlinks fail instead of being silently dropped" {
     assert_true(raised)
   })
 }
+
+///|
+async test "mutation discovery uses supplied snapshot bytes for represented sources" {
+  let root = @fs.tmpdir(prefix="turtles-discover-snapshot")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.write_file(path_join(root, "a.mbt"), "fn value() -> Bool { false }\n")
+    let snapshot : Map[String, Bytes] = {
+      "a.mbt": b"fn value() -> Bool { true }\n",
+    }
+    let found = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshot),
+    )
+    assert_eq(found.length(), 1)
+    assert_eq(found[0].original, "true")
+    @fs.remove(path_join(root, "a.mbt"))
+    let missing = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshot),
+    )
+    assert_eq(missing.length(), 1)
+    assert_eq(missing[0].original, "true")
+  })
+}
+
+///|
+async test "snapshot discovery membership preserves ordering without duplicates" {
+  let root = @fs.tmpdir(prefix="turtles-discovery-membership")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    for name in ["a.mbt", "c.mbt"] {
+      @fs.write_file(path_join(root, name), "fn value() -> Bool { false }\n")
+    }
+    let snapshots : Map[String, Bytes] = {
+      "a.mbt": b"fn value() -> Bool { true }\n",
+      "b.mbt": b"fn value() -> Bool { true }\n",
+      "c.mbt": b"fn value() -> Bool { true }\n",
+    }
+    let found = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshots),
+    )
+    assert_eq(found.map(mutation => mutation.path), ["a.mbt", "b.mbt", "c.mbt"])
+    assert_true(found.all(mutation => mutation.original == "true"))
+  })
+}
+
+///|
+async test "snapshot fallback preserves component-wise depth-first discovery order" {
+  let root = @fs.tmpdir(prefix="turtles-tree-order")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    @fs.mkdir(path_join(root, "a"))
+    @fs.mkdir(path_join(root, "b"))
+    let paths = ["a/x.mbt", "a.mbt", "b/y.mbt", "z.mbt"]
+    let snapshots : Map[String, Bytes] = Map([])
+    for path in paths {
+      let source = b"fn value() -> Bool { true }\n"
+      @fs.write_file(path_join(root, path), source)
+      snapshots[path] = source
+    }
+    let complete = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshots),
+    )
+    assert_eq(complete.map(m => m.path), [
+      "a/x.mbt", "b/y.mbt", "a.mbt", "z.mbt",
+    ])
+    for missing in ["z.mbt", "a.mbt", "a/x.mbt", "b/y.mbt"] {
+      @fs.remove(path_join(root, missing))
+      let restored = discover_mutations(
+        root,
+        None,
+        default_project_config(),
+        [],
+        [],
+        snapshot_sources=Some(snapshots),
+      )
+      assert_eq(restored.map(m => m.path), complete.map(m => m.path))
+      @fs.write_file(path_join(root, missing), snapshots[missing])
+    }
+  })
+}

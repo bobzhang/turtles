@@ -40,6 +40,7 @@ async test "execute_with_config lists mutations or runs the pipeline" {
       fail_under: None,
       list: false,
       file_filter: None,
+      in_diff: None,
       json_report: Some(report),
       timeout_multiplier: None,
       iterate: false,
@@ -99,4 +100,57 @@ test "describe_result renders outcome, edit, and group" {
     describe_result(report_test_result(Survived)),
     content="SURVIVED m.mbt:1:1: a -> b [comparison]",
   )
+}
+
+///|
+async test "diff listing rechecks live source after target planning" {
+  let root = @fs.tmpdir(prefix="turtles-list-snapshot")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    write_order_fixture(root)
+    let file = path_join(root, "order.mbt")
+    let original = @fs.read_file(file).binary()
+    let snapshots : Map[String, Bytes] = { "order.mbt": original }
+    let result = Some(
+      print_mutation_list_interposed(
+        root,
+        [],
+        [],
+        Some("native"),
+        () => @fs.write_file(file, "changed after planning\n"),
+        diff_snapshots=Some(snapshots),
+      ),
+    ) catch {
+      _ => None
+    }
+    assert_true(result is None)
+    @fs.write_file(file, original)
+    print_mutation_list(
+      root,
+      [],
+      [],
+      Some("native"),
+      diff_snapshots=Some(snapshots),
+    )
+  })
+}
+
+///|
+#cfg(not(platform="windows"))
+async test "untargeted empty diff listing does not copy excluded nested module" {
+  let root = @fs.tmpdir(prefix="turtles-empty-diff-list")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    write_order_fixture(root)
+    @fs.mkdir(path_join(root, "nested"))
+    @fs.write_file(
+      path_join(root, "nested/moon.mod"),
+      "name = \"test/nested\"\n",
+    )
+    @fs.symlink(
+      path_join(root, "nested/broken"),
+      target=path_join(root, "absent"),
+    )
+    print_mutation_list(root, [], [], None, diff_snapshots=Some(Map([])))
+  })
 }

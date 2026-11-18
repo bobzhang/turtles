@@ -38,6 +38,7 @@ fn mk_prior(
     turtles_version: turtles,
     moon_version: moon,
     target: None,
+    test_scope: Some("module"),
     files,
     mutants,
   }
@@ -49,7 +50,7 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
   current["a.mbt"] = "hash-a"
   let m = mk_mutation("a.mbt", 0, 1, "+", "-")
   let prior = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon x"),
     "hash-a",
@@ -83,7 +84,7 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
   )
   // Survived and Timeout never reuse.
   let prior_survived = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon x"),
     "hash-a",
@@ -95,7 +96,7 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
     true,
   )
   let prior_timeout = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon x"),
     "hash-a",
@@ -106,8 +107,8 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
     prior_reusable_outcome(prior_timeout, m, current, Some("moon x")) is None,
     true,
   )
-  // Schema 1 and 2 reports never reuse after the schema-3 bump.
-  for old_schema in [1, 2] {
+  // Older schemas never reuse after the schema-4 bump.
+  for old_schema in [1, 2, 3] {
     let old = mk_prior(
       old_schema,
       Some(turtles_version),
@@ -123,7 +124,7 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
   }
   // turtles or moon version drift disables reuse.
   let other_turtles = mk_prior(
-    3,
+    4,
     Some("0.0.0"),
     Some("moon x"),
     "hash-a",
@@ -135,7 +136,7 @@ test "iterate reuses only identity-matched KILLED/UNVIABLE under same toolchain"
     true,
   )
   let other_moon = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon y"),
     "hash-a",
@@ -154,7 +155,7 @@ test "iterate refuses reuse when file content changed" {
   current["a.mbt"] = "new-hash"
   let m = mk_mutation("a.mbt", 0, 1, "+", "-")
   let prior = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon x"),
     "old-hash",
@@ -174,7 +175,7 @@ test "iterate refuses reuse when an unmutated fingerprint file changed" {
   // so no row may be reused.
   let m = mk_mutation("a.mbt", 0, 1, "+", "-")
   let prior = {
-    ..mk_prior(3, Some(turtles_version), Some("moon x"), "hash-a", Killed, None),
+    ..mk_prior(4, Some(turtles_version), Some("moon x"), "hash-a", Killed, None),
     files: {
       "a.mbt": "hash-a",
       "b_test.mbt": "hash-test",
@@ -258,7 +259,7 @@ async test "iterate round-trips killed_by attribution from a prior report" {
       },
     ]).stringify()
     let mutant_json = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"arithmetic\",\"original\":\"+\",\"replacement\":\"-\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1,\"killed_by\":\{kills_json}}"
-    let report = "{\"schema\":3,\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{mutant_json}]}"
+    let report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{mutant_json}]}"
     @fs.write_file(path_join(temp, "report.json"), report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(prior) else {
       fail("expected prior report to load")
@@ -279,7 +280,7 @@ async test "iterate round-trips killed_by attribution from a prior report" {
     }
     // A prior row without killed_by still degrades to "unavailable".
     let bare_json = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"arithmetic\",\"original\":\"+\",\"replacement\":\"-\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
-    let bare_report = "{\"schema\":3,\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{bare_json}]}"
+    let bare_report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{bare_json}]}"
     @fs.write_file(path_join(temp, "report.json"), bare_report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(bare) else {
       fail("expected prior report to load")
@@ -300,7 +301,7 @@ async test "iterate reloads boundary rows without borrowing comparison verdicts"
     // tell them apart, which is exactly what the identity tuple covers.
     let comparison_row = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"comparison\",\"original\":\"<\",\"replacement\":\">\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
     let boundary_row = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"boundary\",\"original\":\"<\",\"replacement\":\"<=\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
-    let report = "{\"schema\":3,\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{comparison_row},\{boundary_row}]}"
+    let report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":2,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":2,\"classified\":2,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{comparison_row},\{boundary_row}]}"
     @fs.write_file(path_join(temp, "report.json"), report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(prior) else {
       fail("expected prior report to load")
@@ -347,7 +348,7 @@ test "mutation_id is a stable m- prefixed hex digest" {
 ///|
 test "iterate never reuses amplification-derived kills" {
   let prior = mk_prior(
-    3,
+    4,
     Some(turtles_version),
     Some("moon x"),
     "hash-a",
@@ -361,4 +362,166 @@ test "iterate never reuses amplification-derived kills" {
   )
   // Amplification configuration is deliberately not trusted: the same
   // conservative guard holds for a disabled or changed-factor run.
+}
+
+///|
+test "iteration requires complete balanced selection metadata" {
+  let valid = "{\"run_id\":\"run-1\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"diff\",\"discovered\":2,\"diff_excluded\":1,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":{\"fingerprint_algorithm\":\"fnv1a64-v1\",\"fingerprint\":\"0123456789abcdef\",\"validation\":\"represented-new-side-v1\"},\"shard\":null},\"mutants\":[{}]}"
+  guard @json.parse(valid) is Object(fields) else { fail("expected object") }
+  assert_true(prior_selection_complete(fields))
+  for
+    corrupt in [
+      valid.replace(old="\"run_id\":\"run-1\"", new="\"run_id\":\"\""),
+      valid.replace(old="\"classified\":1", new="\"classified\":0"),
+      valid.replace(old="\"discovered\":2", new="\"discovered\":2.5"),
+      valid.replace(old="\"shard\":null", new="\"shard\":{}"),
+    ] {
+    guard @json.parse(corrupt) is Object(object) else {
+      fail("expected object")
+    }
+    assert_false(prior_selection_complete(object))
+  }
+  let prior = mk_prior(
+    4,
+    Some(turtles_version),
+    Some("moon x"),
+    "hash-a",
+    Killed,
+    None,
+  )
+  let affected = { ..prior, test_scope: Some("affected"), }
+  assert_true(
+    prior_reusable_outcome(
+      affected,
+      mk_mutation("a.mbt", 0, 1, "+", "-"),
+      prior.files,
+      Some("moon x"),
+    )
+    is None,
+  )
+  let unknown_moon = { ..prior, moon_version: None, }
+  assert_true(
+    prior_reusable_outcome(
+      unknown_moon,
+      mk_mutation("a.mbt", 0, 1, "+", "-"),
+      prior.files,
+      None,
+    )
+    is None,
+  )
+}
+
+///|
+async test "iteration ignores incomplete and old reports" {
+  let root = @fs.tmpdir(prefix="turtles-iterate-incomplete")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    let path = path_join(root, "report.json")
+    for
+      text in [
+        "{\"schema\":3,\"execution\":\"completed\"}", "{\"schema\":4,\"execution\":\"running\"}",
+        "{\"schema\":4,\"execution\":\"completed\"}", "{\"schema\":4.5,\"execution\":\"completed\"}",
+      ] {
+      @fs.write_file(path, text)
+      assert_true(load_prior_report(path) is None)
+    }
+  })
+}
+
+///|
+test "iteration rejects malformed mutation identity and amplification fields" {
+  let row = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"arithmetic\",\"original\":\"+\",\"replacement\":\"-\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
+  assert_true(parse_prior_mutant(@json.parse(row)) is Some(_))
+  for
+    bad in [
+      row.replace(old="\"offset\":0", new="\"offset\":0.5"),
+      row.replace(old="\"end\":1", new="\"end\":0"),
+      row.replace(old="\"column\":1", new="\"column\":0"),
+      row.replace(
+        old="\"outcome\":\"KILLED\"",
+        new="\"outcome\":\"KILLED\",\"amplified\":\"true\"",
+      ),
+    ] {
+    assert_true(parse_prior_mutant(@json.parse(bad)) is None)
+  }
+}
+
+///|
+async test "schema four target provenance is explicit and cannot cross backend" {
+  let root = @fs.tmpdir(prefix="turtles-target-provenance")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    let path = path_join(root, "report.json")
+    let result = report_test_result(Killed)
+    let files : Map[String, String] = { "m.mbt": "hash" }
+    let report = build_report(
+      "module",
+      Some("moon test"),
+      1L,
+      1L,
+      1L,
+      "module",
+      [result],
+      [],
+      files,
+      0.0,
+      target=Some("native"),
+    )
+    write_json_report(path, report)
+    let native_text = @fs.read_file(path).text()
+    guard load_prior_report(path) is Some(native_prior) else {
+      fail("expected native prior")
+    }
+    assert_true(
+      prior_reusable_outcome(
+        native_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+        target=Some("native"),
+      )
+      is Some(_),
+    )
+    assert_true(
+      prior_reusable_outcome(
+        native_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+      )
+      is None,
+    )
+    let json = @json.parse(native_text)
+    guard json is Object(fields) else { fail("expected report object") }
+    fields.remove("target")
+    @fs.write_file(path, json.stringify())
+    assert_true(load_prior_report(path) is None)
+    let default_report = build_report(
+      "module",
+      Some("moon test"),
+      1L,
+      1L,
+      1L,
+      "module",
+      [result],
+      [],
+      files,
+      0.0,
+    )
+    write_json_report(path, default_report)
+    assert_true(@fs.read_file(path).text().contains("\"target\": null"))
+    guard load_prior_report(path) is Some(default_prior) else {
+      fail("expected default prior")
+    }
+    assert_true(default_prior.target is None)
+    assert_true(
+      prior_reusable_outcome(
+        default_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+      )
+      is Some(_),
+    )
+  })
 }
