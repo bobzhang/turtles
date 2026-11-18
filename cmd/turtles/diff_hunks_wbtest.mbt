@@ -88,3 +88,17 @@ test "context-only hunks are malformed even when both counts match" {
   let (deletion, _) = parse_diff_hunk([b"@@ -1 +0,0 @@", b"-gone"], 0, 1)
   assert_true(deletion.lines.is_empty())
 }
+
+///|
+test "hunk omitted lines must agree before and between edits" {
+  for
+    patch in [
+      b"--- a/x.mbt\n+++ b/x.mbt\n@@ -999 +2 @@\n-old\n+new\n", b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +4 @@\n-c\n+d\n",
+    ] {
+    assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
+  }
+  // One inserted line shifts subsequent coordinates, not the unchanged gaps.
+  let valid = b"--- a/x.mbt\n+++ b/x.mbt\n@@ -1,0 +2 @@\n+inserted\n@@ -3 +4 @@\n-old\n+new\n"
+  let sections = parse_diff_sections(valid)
+  assert_eq(sections[0].hunks.length(), 2)
+}

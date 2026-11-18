@@ -186,6 +186,9 @@ fn validate_diff_hunk_order(
       !(old_boundary == previous_old_start && new_boundary == previous_new_start) else {
       fail("\{path}: hunk \{index + 1}: overlapping or out-of-order ranges")
     }
+    guard old_boundary - old_end == new_boundary - new_end else {
+      fail("\{path}: hunk \{index + 1}: unequal omitted line counts")
+    }
     guard !(saw_unterminated_old && hunk.old_count > 0) &&
       !(saw_unterminated_new && hunk.new_count > 0) else {
       fail("\{path}: hunk \{index + 1}: range follows no-newline marker")
