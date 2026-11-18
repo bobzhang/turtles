@@ -643,3 +643,47 @@ test "conditional or malformed manifest imports grant no analysis permissions" {
     assert_true(pkg_text_import_entries(source, "test").is_empty())
   }
 }
+
+///|
+async test "manifest option deprecation preserves pure import and witness identity" {
+  let deprecated =
+    #|import { "moonbitlang/core/math" @m, }
+    #|options("warn-list": "-1")
+  let modern =
+    #|import { "moonbitlang/core/math" @m, }
+    #|warnings = "-1"
+  let result = @moon_config.parse_moon_pkg(deprecated)
+  assert_true(result.diagnostics.errors.is_empty())
+  assert_false(result.diagnostics.warnings.is_empty())
+  assert_eq(pkg_text_import_entries(deprecated, "source"), [
+    ("moonbitlang/core/math", Some("m")),
+  ])
+  assert_eq(
+    pkg_text_import_entries(deprecated, "source"),
+    pkg_text_import_entries(modern, "source"),
+  )
+  let dir = @fs.tmpdir(prefix="turtles-import-warning")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn pure_alias(x : Double) -> Double { @m.sqrt(x) }\n",
+    )
+    for manifest in [deprecated, modern] {
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let imports = pkg_import_map(
+        dir,
+        ".",
+        Some("turtles/index_wbtest"),
+        Map([]),
+        "source",
+      )
+      assert_eq(imports.get("m"), Some("moonbitlang/core/math"))
+      let index = build_module_index(dir)
+      let entry = index.pkgs["."].fns["pure_alias"]
+      assert_false(entry.effects_unknown)
+      assert_true(witness_eligible(index, entry) is None)
+    }
+  })
+}

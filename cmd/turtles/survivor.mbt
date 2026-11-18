@@ -721,8 +721,8 @@ fn pkg_text_import_entries(
   scope : String,
 ) -> Array[(String, String?)] {
   let result = @moon_config.parse_moon_pkg(text)
-  if !result.diagnostics.errors.is_empty() ||
-    !result.diagnostics.warnings.is_empty() {
+  // Unrelated deprecation warnings do not invalidate resolved import identities.
+  if !result.diagnostics.errors.is_empty() {
     return []
   }
   let entries : Array[(String, String?)] = []
