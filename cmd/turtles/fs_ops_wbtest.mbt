@@ -565,3 +565,29 @@ async test "mutation discovery uses supplied snapshot bytes for represented sour
     assert_eq(missing[0].original, "true")
   })
 }
+
+///|
+async test "snapshot discovery membership preserves ordering without duplicates" {
+  let root = @fs.tmpdir(prefix="turtles-discovery-membership")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    for name in ["a.mbt", "c.mbt"] {
+      @fs.write_file(path_join(root, name), "fn value() -> Bool { false }\n")
+    }
+    let snapshots : Map[String, Bytes] = {
+      "a.mbt": b"fn value() -> Bool { true }\n",
+      "b.mbt": b"fn value() -> Bool { true }\n",
+      "c.mbt": b"fn value() -> Bool { true }\n",
+    }
+    let found = discover_mutations(
+      root,
+      None,
+      default_project_config(),
+      [],
+      [],
+      snapshot_sources=Some(snapshots),
+    )
+    assert_eq(found.map(mutation => mutation.path), ["a.mbt", "b.mbt", "c.mbt"])
+    assert_true(found.all(mutation => mutation.original == "true"))
+  })
+}
