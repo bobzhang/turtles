@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "exit_code": 1,
+  "run_id": "turtles-run-fixture",
+  "module": "/work/checkout/example",
+  "module_prefix": "example",
+  "target": "native",
+  "test_scope": "module",
+  "files": {
+    "calc.mbt": "742329e1d298fece",
+    "calc_test.mbt": "c97ac4726fa4656a",
+    "idle.mbt": "554c7b57dc9a6040",
+    "moon.mod": "95cf0fb8d12cd3c4",
+    "moon.pkg": "cbf29ce484222325"
+  },
+  "selection": {
+    "version": 1,
+    "scope": "diff",
+    "discovered": 7,
+    "diff_excluded": 2,
+    "target_inactive": 1,
+    "shard_excluded": 0,
+    "selected": 4,
+    "classified": 4,
+    "diff": {
+      "fingerprint_algorithm": "fnv1a64-v1",
+      "fingerprint": "b880947d6b35da72",
+      "validation": "represented-new-side-v1"
+    },
+    "shard": null
+  },
+  "selected_lines": {
+    "m-c742f68b57434bd4": 2,
+    "m-a817911063c6a4cd": 3,
+    "m-e7142a7b16419848": 4,
+    "m-99e1ef3ac38106f0": 4
+  },
+  "report_sha256": "06d5a9cf75c02e4b959d0af7bd9d53353e2fb99403bd1139f198434886c44fa0"
+}
