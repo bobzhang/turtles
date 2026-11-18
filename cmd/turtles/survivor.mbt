@@ -619,67 +619,6 @@ fn pkg_dir_of(pkg_dirs : Map[String, Bool], path : String) -> String {
 }
 
 ///|
-/// Find `import { ... }` blocks in moon.pkg text and return (content
-/// range, whether a `for "..."` scope follows the closing brace) for each.
-fn pkg_import_blocks(text : String) -> Array[((Int32, Int32), Bool)] {
-  let bytes = @utf8.encode(text)
-  let blocks : Array[((Int32, Int32), Bool)] = []
-  let mut i = 0
-  let n = bytes.length()
-  while i < n {
-    // match the `import` keyword on an identifier boundary
-    if bytes[i] == b'i' &&
-      i + 6 <= n &&
-      @utf8.decode_lossy(bytes[i:i + 6]) == "import" &&
-      (i + 6 >= n || !(bytes[i + 6] >= b'a' && bytes[i + 6] <= b'z')) {
-      let mut j = i + 6
-      while j < n &&
-            (
-              bytes[j] == b' ' ||
-              bytes[j] == b'\n' ||
-              bytes[j] == b'\t' ||
-              bytes[j] == b'\r'
-            ) {
-        j = j + 1
-      }
-      if j < n && bytes[j] == b'{' {
-        let open = j
-        let mut depth = 1
-        j = j + 1
-        while j < n && depth > 0 {
-          if bytes[j] == b'{' {
-            depth = depth + 1
-          } else if bytes[j] == b'}' {
-            depth = depth - 1
-          }
-          j = j + 1
-        }
-        let close = j - 1
-        // skip whitespace after '}' and detect a `for` scope qualifier
-        let mut k = j
-        while k < n &&
-              (
-                bytes[k] == b' ' ||
-                bytes[k] == b'\n' ||
-                bytes[k] == b'\t' ||
-                bytes[k] == b'\r'
-              ) {
-          k = k + 1
-        }
-        let scoped = k + 3 <= n && @utf8.decode_lossy(bytes[k:k + 3]) == "for"
-        blocks.push(((open + 1, close), scoped))
-        i = k
-      } else {
-        i = j
-      }
-    } else {
-      i = i + 1
-    }
-  }
-  blocks
-}
-
-///|
 /// Use Moon's manifest parser for import paths, aliases and scopes.
 /// This keeps comments and whitespace from masquerading as imports.
 /// Malformed manifests and conflicting aliases grant no analysis permissions.

@@ -1185,7 +1185,11 @@ async test "unrelated conditional import produces a real witness but shadows fai
         "conditional witness",
         60000,
         None,
-        Some("native"),
+        if conditional == "import { \"moonbitlang/core/math\" }" {
+          Some("native")
+        } else {
+          None
+        },
       )
       if conditional == "import { \"moonbitlang/core/math\" }" {
         assert_eq(witnessed.witness_skipped, None)
@@ -1195,6 +1199,79 @@ async test "unrelated conditional import produces a real witness but shadows fai
         assert_eq(witnessed.witness_skipped, Some("harness-error"))
         assert_eq(witnessed.witness, None)
       }
+    }
+  })
+}
+
+///|
+test "QuickCheck condition evaluation is three valued and target explicit" {
+  let unknown = @moon_config.Condition::Target("js")
+  assert_eq(quickcheck_condition_value(unknown, None), None)
+  assert_eq(quickcheck_condition_value(Target("future"), Some("native")), None)
+  assert_eq(quickcheck_condition_value(unknown, Some("native")), Some(false))
+  assert_eq(quickcheck_condition_value(Not(Bool(false)), None), Some(true))
+  assert_eq(
+    quickcheck_condition_value(All([Bool(false), unknown]), None),
+    Some(false),
+  )
+  assert_eq(quickcheck_condition_value(All([Bool(true), unknown]), None), None)
+  assert_eq(
+    quickcheck_condition_value(Any([Bool(true), unknown]), None),
+    Some(true),
+  )
+  assert_eq(quickcheck_condition_value(Any([Bool(false), unknown]), None), None)
+  for
+    cfg in [
+      "false", "not(true)", "all(false, target = \"js\")", "any(false, false)",
+    ] {
+    let text = "import { \"moonbitlang/core/quickcheck\" @qc }\n#cfg(\{cfg})\nimport { \"moonbitlang/core/math\" @qc }"
+    assert_eq(pkg_text_quickcheck_alias(text, "source"), Some("qc"))
+    assert_true(pkg_text_import_entries(text, "source").is_empty())
+  }
+  let shadow = "import { \"moonbitlang/core/quickcheck\" @qc }\n#cfg(target = \"js\")\nimport { \"moonbitlang/core/quickcheck\" @other }"
+  assert_eq(pkg_text_quickcheck_alias(shadow, "source"), None)
+  assert_eq(
+    pkg_text_quickcheck_alias(shadow, "source", target=Some("js")),
+    None,
+  )
+  assert_eq(
+    pkg_text_quickcheck_alias(shadow, "source", target=Some("native")),
+    Some("qc"),
+  )
+}
+
+///|
+async test "first conditional block never captures inserted QuickCheck" {
+  let dir = @fs.tmpdir(prefix="turtles-first-condition")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    for cfg in ["false", "target = \"js\"", "target = \"native\""] {
+      let manifest = "#cfg(\{cfg})\nimport { \"moonbitlang/core/math\" }"
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let source = "pub fn changed(x : Int) -> Int { x + 1 }\n"
+      @fs.write_file(path_join(dir, "lib.mbt"), source)
+      let index = build_module_index(dir)
+      let offset = byte_offset_of(source, "+")
+      let result = {
+        ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+        packages: None,
+      }
+      let witnessed = witness_one(
+        dir,
+        index.pkgs["."].fns["changed"],
+        result,
+        "changed_original",
+        "cfg guard",
+        "cfg witness",
+        60000,
+        None,
+        Some("native"),
+      )
+      assert_eq(witnessed.witness_skipped, None)
+      assert_true(witnessed.witness is Some(value) && value != "none")
+      let updated = @fs.read_file(path_join(dir, "moon.pkg")).text()
+      assert_true(updated.has_prefix(manifest + "\nimport {"))
     }
   })
 }
