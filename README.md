@@ -31,7 +31,7 @@ moon install https://github.com/gpui-mbt/turtles.mbt.git cmd/turtles --branch ma
 Install from the matching source tag after it is created:
 
 ```sh
-moon install https://github.com/gpui-mbt/turtles.mbt.git cmd/turtles --tag v0.4.7
+moon install https://github.com/gpui-mbt/turtles.mbt.git cmd/turtles --tag v0.5.0
 ```
 
 ### From a local clone
@@ -43,7 +43,7 @@ moon install ./cmd/turtles
 ## First run in 30 seconds
 
 ```sh
-turtles --version          # turtles 0.4.7 for this source release
+turtles --version          # turtles 0.5.0 for this source release
 turtles --help
 
 cd path/to/your-moonbit-module
@@ -52,7 +52,7 @@ turtles --dir .            # or: turtles --list to preview the mutation set
 
 Every mutant runs in its own temporary workspace; on a small module the whole run takes seconds.
 
-The examples below describe the unreleased development version: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. Source CI and future release builds follow the latest stable MoonBit compiler/core. This branch updates the lexer/parser dependency family and has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. The already published 0.4.7 registry package still requires the older `0.10.16+b1a0e846e` toolchain; its checkout-free historical-release CI intentionally retains that pin until a compatible version is published.
+The examples below describe the 0.5.0 source release: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. Source CI and future release builds follow the latest stable MoonBit compiler/core. Version 0.5.0 updates the lexer/parser dependency family and has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. The already published 0.4.7 registry package still requires the older `0.10.16+b1a0e846e` toolchain; its checkout-free historical-release CI intentionally retains that pin. After 0.5.0 is published, install it with `moon install f4ah6o/turtles/cmd/turtles@0.5.0` using the latest stable toolchain. The stable-install commands above continue to identify the already published 0.4.7 artifacts until publication is verified.
 
 ## Typical local usage
 
@@ -160,7 +160,7 @@ Every run writes a schema-`4` report and per-survivor unified diffs to `<dir>/.t
     "diff_excluded": 0, "target_inactive": 1, "shard_excluded": 0,
     "selected": 6, "classified": 6, "diff": null, "shard": null },
   "module": "/abs/path",
-  "turtles_version": "0.4.7",
+  "turtles_version": "0.5.0",
   "moon_version": "moon 0.1.20260920 (914d7da 2026-09-20) ~/.moon/bin/moon",
   "target": "native",
   "inactive_mutants": 1,
@@ -315,7 +315,7 @@ JUnit reports, richer survivor context, and smarter default test selection are s
 ## Versioned native releases
 
 Edit the `version` field in `moon.mod` to the intended SemVer version
-(e.g., `0.4.6` to `0.4.7`) and merge that change into `main`.
+(e.g., `0.4.7` to `0.5.0`) and merge that change into `main`.
 The release workflow compares the previous and new **version values**, not
 just the file modification date. On a version increase it validates
 version consistency, builds four native platforms, then creates the
