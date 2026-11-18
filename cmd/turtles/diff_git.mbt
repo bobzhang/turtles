@@ -7,6 +7,7 @@ struct DiffGitMetadata {
   mut rename_from : String?
   mut rename_to : String?
   mut similarity : Int32?
+  mut index_blobs : (String, String)?
   mut index_seen : Bool
 }
 
@@ -54,7 +55,7 @@ fn diff_is_hex(bytes : BytesView) -> Bool {
 ///|
 /// Validate the index metadata shape; object IDs are not evidence that the
 /// working tree matches either revision.
-fn diff_index_mode(line : Bytes) -> String? raise {
+fn diff_index_mode(line : Bytes) -> (String?, String, String) raise {
   let mut delimiter = -1
   let mut space = -1
   for i = 0; i < line.length(); i = i + 1 {
@@ -74,11 +75,16 @@ fn diff_index_mode(line : Bytes) -> String? raise {
     diff_is_hex(line[delimiter + 2:end]) else {
     fail("invalid Git index metadata")
   }
-  if space < 0 {
+  let mode = if space < 0 {
     None
   } else {
     Some(diff_mode(line[space + 1:].to_owned()))
   }
+  (
+    mode,
+    @utf8.decode(line[:delimiter].to_owned()).to_lower(),
+    @utf8.decode(line[delimiter + 2:end].to_owned()).to_lower(),
+  )
 }
 
 ///|
@@ -97,6 +103,7 @@ fn diff_git_metadata(
     rename_to: None,
     similarity: None,
     index_seen: false,
+    index_blobs: None,
   }
   let mut i = start
   while i < lines.length() {
@@ -134,7 +141,8 @@ fn diff_git_metadata(
     } else if line.length() >= 6 && line[:6] == b"index " {
       guard !info.index_seen else { fail("duplicate Git index metadata") }
       info.index_seen = true
-      let mode = diff_index_mode(line[6:].to_owned())
+      let (mode, old_blob, new_blob) = diff_index_mode(line[6:].to_owned())
+      info.index_blobs = Some((old_blob, new_blob))
       match mode {
         Some(value) => {
           guard info.old_mode is None &&
@@ -422,6 +430,15 @@ fn parse_git_diff_section(
     fail("binary MoonBit source cannot be validated")
   }
   if hunks.is_empty() && !binary {
+    if meta.index_blobs is Some((old_blob, new_blob)) && old_blob != new_blob {
+      // Empty additions/deletions have no hunks. All other differing blobs
+      // require content records, even alongside a mode change or rename.
+      let empty_change = (meta.added && diff_empty_blob(new_blob)) ||
+        (meta.deleted && diff_empty_blob(old_blob))
+      guard empty_change else {
+        fail("Git index claims missing content changes")
+      }
+    }
     let changed_mode = match (meta.old_mode, meta.new_mode) {
       (Some(old_mode), Some(new_mode)) => old_mode != new_mode
       _ => false
@@ -437,4 +454,15 @@ fn parse_git_diff_section(
     }
   }
   ({ old_path, new_path, hunks, binary, }, i)
+}
+
+///|
+fn diff_empty_blob(oid : String) -> Bool {
+  oid.length() >= 7 &&
+  (
+    "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391".has_prefix(oid) ||
+    "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813".has_prefix(
+      oid,
+    )
+  )
 }

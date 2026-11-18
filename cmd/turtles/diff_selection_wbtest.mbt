@@ -212,7 +212,7 @@ async test "added sources require complete content while empty additions stay va
   @async.with_task_group(group => {
     group.add_defer(() => @fs.rmdir(root, recursive=true))
     let file = path_join(root, "new.mbt")
-    let header = b"diff --git a/new.mbt b/new.mbt\nnew file mode 100644\nindex 0000000..abcdef0\n"
+    let header = b"diff --git a/new.mbt b/new.mbt\nnew file mode 100644\nindex 0000000..e69de29\n"
     let truncated = parse_diff_sections(header)
     @fs.write_file(file, "one\ntwo\n")
     assert_true(
