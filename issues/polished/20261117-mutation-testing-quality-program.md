@@ -35,7 +35,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 | D0 差分対象（最初） | [既存のpolished diff issue](20261013-diff-aware-mutation-selection.md)に従う`--in-diff FILE`実装PR。Gitの起動、schema 4仕様変更を勝手に混ぜない | 元issueのparser/new-side照合/byte交差/list-run一致/partial metadata/E2Eを満たす |
 | D0b Git入力（後続） | `--since BASE`等のGit-facing wrapperを**別issue**として設計。参照revisionとcheckout、dirty tree、test-only diffの扱いを明文化 | D0の検証済みdiff入力契約が存在する。Git解決失敗を空集合へ変換しない |
 | D1 再利用/増分cache | mutation identity・toolchain・target・test/manifest/source/設定・外部依存の失効証拠を記録。cold/warm比較 | まず依存推定のsoundnessをfixtureで証明。証拠不足はfull oracleへ戻し、既存`--iterate`を弱めない |
-| D2 test単位選別 | `moon test --enable-coverage`とtest指定方法を**調査するspike** → 観測可能ならper-test選択の個別issue | coverageがtestごとに帰属できるかを検証。できなければ`--affected`/module-wideを維持する。テストを実行せず除外したmutantを`SURVIVED`と扱わない。実行済みでテストを通過したmutantは到達有無と独立に`SURVIVED`とし、到達性は別の証拠として記録する |
+| D2 test単位選別 | `moon test --enable-coverage`とtest指定方法を**調査するspike** → 観測可能ならper-test選択の個別issue | coverageがtestごとに帰属できるかを検証。できなければ`--affected`/module-wideを維持する。テストを実行せず除外したmutantを`SURVIVED`と扱わない。実行済みで初期テストを通過したmutantの`SURVIVED`は、有効な解析（`--pbt-amplify`による`KILLED`への更新を含む）が完了するまで暫定とする。最終verdictは同じ設定のfull runの契約を維持し、到達性は別の証拠として記録する |
 | D3 指摘の有用性 | survivorを未到達/到達したが検出されない/判定不能に分ける証拠モデル、arid/等価候補の理由付きレビュー、再現手順 | 自動でequivalentと断言しない。除外は明示的判断と履歴が必要。reportのscore分母変更は別契約 |
 | D4 PR/agent連携 | partial reportに基づく注釈・件数上限・時間予算・`--only ID`相当の再検証・agent向け操作情報 | D0のscopeが監査可能。cache/coverageは利用可能時のみopt-in。未実行・timeout・setup errorを成功表示しない |
 
