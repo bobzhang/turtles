@@ -202,3 +202,33 @@ test "prefixless rename and binary addition retain a and b directories" {
   let prefixed_sections = parse_diff_sections(prefixed)
   assert_eq(prefixed_sections[0].new_path, "b/image.bin")
 }
+
+///|
+test "Git differing index blobs require content even with mode or rename metadata" {
+  for
+    patch in [
+      b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\nindex 1234567..abcdef0\n",
+      b"diff --git a/a.mbt b/b.mbt\nsimilarity index 100%\nrename from a.mbt\nrename to b.mbt\nindex 1234567..abcdef0\n",
+      b"diff --git a/a.mbt b/a.mbt\nnew file mode 100644\nindex 0000000..abcdef0\n",
+      b"diff --git a/a.mbt b/a.mbt\ndeleted file mode 100644\nindex abcdef0..0000000\n",
+    ] {
+    assert_true(
+      (Some(parse_git_diff_section(diff_patch_lines(patch), 0)) catch {
+        _ => None
+      })
+      is None,
+    )
+  }
+  for
+    patch in [
+      b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\n", b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\nindex ABCDEF0..abcdef0\n",
+      b"diff --git a/a.mbt b/a.mbt\nnew file mode 100644\nindex 0000000..e69de29\n",
+      b"diff --git a/a.mbt b/a.mbt\ndeleted file mode 100644\nindex e69de29..0000000\n",
+    ] {
+    let (section, _) = parse_git_diff_section(diff_patch_lines(patch), 0)
+    assert_true(section.hunks.is_empty())
+  }
+  let patch = b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\nindex 1234567..abcdef0\n--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-old\n+new\n"
+  let (section, _) = parse_git_diff_section(diff_patch_lines(patch), 0)
+  assert_eq(section.hunks.length(), 1)
+}
