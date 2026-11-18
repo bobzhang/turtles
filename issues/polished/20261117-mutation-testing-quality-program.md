@@ -35,11 +35,11 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 | D0 差分対象（最初） | [既存のpolished diff issue](20261013-diff-aware-mutation-selection.md)に従う`--in-diff FILE`実装PR。Gitの起動、schema 4仕様変更を勝手に混ぜない | 元issueのparser/new-side照合/byte交差/list-run一致/partial metadata/E2Eを満たす |
 | D0b Git入力（後続） | `--since BASE`等のGit-facing wrapperを**別issue**として設計。参照revisionとcheckout、dirty tree、test-only diffの扱いを明文化 | D0の検証済みdiff入力契約が存在する。Git解決失敗を空集合へ変換しない |
 | D1 再利用/増分cache | mutation identity・toolchain・target・test/manifest/source/設定・外部依存の失効証拠を記録。cold/warm比較 | まず依存推定のsoundnessをfixtureで証明。証拠不足はfull oracleへ戻し、既存`--iterate`を弱めない |
-| D2 test単位選別 | `moon test --enable-coverage`とtest指定方法を**調査するspike** → 観測可能ならper-test選択の個別issue | coverageがtestごとに帰属できるかを検証。できなければ`--affected`/module-wideを維持し、未到達をsurvivedと扱わない |
+| D2 test単位選別 | `moon test --enable-coverage`とtest指定方法を**調査するspike** → 観測可能ならper-test選択の個別issue | coverageがtestごとに帰属できるかを検証。できなければ`--affected`/module-wideを維持する。テストを実行せず除外したmutantを`SURVIVED`と扱わない。実行済みでテストを通過したmutantは到達有無と独立に`SURVIVED`とし、到達性は別の証拠として記録する |
 | D3 指摘の有用性 | survivorを未到達/到達したが検出されない/判定不能に分ける証拠モデル、arid/等価候補の理由付きレビュー、再現手順 | 自動でequivalentと断言しない。除外は明示的判断と履歴が必要。reportのscore分母変更は別契約 |
 | D4 PR/agent連携 | partial reportに基づく注釈・件数上限・時間予算・`--only ID`相当の再検証・agent向け操作情報 | D0のscopeが監査可能。cache/coverageは利用可能時のみopt-in。未実行・timeout・setup errorを成功表示しない |
 
-**依存順序**: D0は独立実装可。D1/D2はD0と並行で調査可。D3の人手分類モデルも独立で検証可。D4の差分PR gateはD0のscope/manifestを前提にする。D1/D2が未完成でもD4の最小版を阻止しない。D0で導入するschema 4と[永続診断](20261013-persistent-run-diagnostics.md)・[sharding](20261013-deterministic-ci-sharding.md)の共通契約は既存polished indexに従う。
+**依存順序**: D0は独立実装可。D1/D2はD0と並行で調査可。D3の人手分類モデルも独立で検証可。D4の差分PR gateはD0のscope/manifestを前提にする。D1/D2が未完成でもD4の最小版を阻止しない。ただしbudget中断後の件数・結果の注釈は、当該invocationに結び付いた進捗artifactまたは永続診断が利用可能になるまで導入しない。schema 4は共通フィールドを最初に導入するトラックが3→4へ移行し、D0は着地順に応じて導入または既存の4を共有する。[永続診断](20261013-persistent-run-diagnostics.md)・[sharding](20261013-deterministic-ci-sharding.md)の共通契約は既存polished indexに従う。
 
 ## 不変条件（すべての実装PRに適用）
 
@@ -79,7 +79,7 @@ turtles.mbtを「mutantを列挙してscoreを計算するCLI」から、PR差�
 
 ### D4: PR/agent integration
 
-- [ ] Given`--in-diff`の選択済みreport、whenCI注釈、thensource path/line/mutant ID/根拠/再実行手順を出し、上限数・budget後の未実行件数を表示する。
+- [ ] Given`--in-diff`の完了report、whenCI注釈、thensource path/line/mutant ID/根拠/再実行手順と注釈件数の上限を示す。budget中断後の未実行件数・途中結果は、invocation IDと入力・選択集合に結び付いた別の進捗artifactまたは永続診断を根拠にする。完了reportから未完了runの進捗を推定せず、前回reportを流用しない。根拠がなければ件数不明・未完了と表示し、budgetベースの注釈は保留する。
 - [ ] Given同一identity、when`--only ID`相当で再実行、then対象外の結果を暗黙に「成功」とせず、再検証対象と入力変更を表示する。offset依存の現行IDをそのまま編集間stableと主張しない。
 - [ ] Giventestを追加/更新、when再実行、then以前のsurvivorがkillされたか、未検証かを区別する。agent自身が証拠なしでacceptやtest rewriteを実行しない。
 - [ ] GivenPRがtest-only、diffなし、CI cancelled、time budget exceeded、baseline fail、whenCheck出力、thenpartial/unknown/setup errorを明示。初期PR gateは通知中心で始め、実測後にhard gateを別途判断する。
