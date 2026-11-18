@@ -725,54 +725,58 @@ fn pkg_text_import_entries(
   if !result.diagnostics.errors.is_empty() {
     return []
   }
+  // Legacy fields replace modern blocks of the same scope, even when empty.
+  let legacy : Map[String, Array[(String, String?)]] = Map([])
+  for statement in result.ast.0 {
+    let fields = match statement {
+      @moon_config.Statement::Assign(field) => [field]
+      @moon_config.Statement::Expr(
+        @moon_config.Expr::Apply(name="options", args~, ..),
+      ) => args
+      _ => []
+    }
+    for field in fields {
+      let key = match field.key {
+        "import" => "source"
+        "test-import" => "test"
+        "wbtest-import" => "wbtest"
+        _ => continue
+      }
+      if key != "source" && key != scope {
+        continue
+      }
+      if legacy.contains(key) {
+        return []
+      }
+      guard pkg_legacy_import_entries(field.value) is Some(imports) else {
+        return []
+      }
+      legacy[key] = imports
+    }
+  }
   let blocks : Array[(String, Array[(String, String?)])] = []
   for statement in result.ast.0 {
-    match statement {
-      @moon_config.Statement::Import(items~, kind~, conditions~, ..) => {
-        let key = match kind {
-          Normal => "source"
-          Test => "test"
-          Wbtest => "wbtest"
-        }
-        if key != "source" && key != scope {
-          continue
-        }
-        // Unresolved conditions affect only the scopes that can see them.
-        if !conditions.is_empty() {
-          return []
-        }
-        let imports : Array[(String, String?)] = []
-        for item in items {
-          imports.push((item.path, item.alias_.map(pair => pair.0)))
-        }
-        blocks.push((key, imports))
+    if statement
+      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) {
+      let key = match kind {
+        Normal => "source"
+        Test => "test"
+        Wbtest => "wbtest"
       }
-      _ => {
-        // The parser retains accepted legacy options and assignments instead
-        // of rewriting them into Import statements. Include their identities.
-        let fields = match statement {
-          @moon_config.Statement::Assign(field) => [field]
-          @moon_config.Statement::Expr(
-            @moon_config.Expr::Apply(name="options", args~, ..),
-          ) => args
-          _ => []
-        }
-        for field in fields {
-          let key = match field.key {
-            "import" => "source"
-            "test-import" => "test"
-            "wbtest-import" => "wbtest"
-            _ => continue
-          }
-          if key != "source" && key != scope {
-            continue
-          }
-          guard pkg_legacy_import_entries(field.value) is Some(imports) else {
-            return []
-          }
-          blocks.push((key, imports))
-        }
+      if (key != "source" && key != scope) || legacy.contains(key) {
+        continue
       }
+      if !conditions.is_empty() {
+        return []
+      }
+      blocks.push(
+        (key, items.map(item => (item.path, item.alias_.map(pair => pair.0)))),
+      )
+    }
+  }
+  for key in ["source", "test", "wbtest"] {
+    if legacy.get(key) is Some(imports) {
+      blocks.push((key, imports))
     }
   }
   let entries : Array[(String, String?)] = []

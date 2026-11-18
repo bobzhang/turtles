@@ -741,9 +741,6 @@ async test "legacy option imports preserve scopes aliases and pure witnesses" {
 test "legacy and modern import blocks reject duplicate or malformed identities" {
   for
     source in [
-      "import { \"unrelated/math\" }\noptions(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"math\"}])",
-      "options(\"test-import\": [\"unrelated/math\"])\nimport { \"moonbitlang/core/math\" } for \"test\"",
-      "options(\"wbtest-import\": [\"unrelated/math\"])\nimport { \"moonbitlang/core/math\" } for \"wbtest\"",
       "options(\"import\": [42])", "options(\"import\": [{\"alias\": \"m\"}])", "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": 42}])",
       "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"path\": \"unrelated/math\"}])",
     ] {
@@ -803,4 +800,116 @@ test "conflicting visible aliases fail closed while identical bindings deduplica
   assert_eq(pkg_text_import_entries(repeated, "source"), [
     ("moonbitlang/core/math", None),
   ])
+}
+
+///|
+test "legacy lists override modern identities per scope including empty lists" {
+  let mixed =
+    #|import { "moonbitlang/core/math" @m }
+    #|options("import": [{"path": "unrelated/pkg", "alias": "m"}])
+  assert_eq(pkg_text_import_entries(mixed, "source"), [
+    ("unrelated/pkg", Some("m")),
+  ])
+  assert_true(
+    pkg_text_import_entries(
+      "import { \"moonbitlang/core/math\" }\noptions(\"import\": [])", "source",
+    ).is_empty(),
+  )
+  for key in ["test", "wbtest"] {
+    let scoped = "import { \"moonbitlang/core/math\" } for \"\{key}\"\noptions(\"\{key}-import\": [\"unrelated/pkg\"])"
+    assert_eq(pkg_text_import_entries(scoped, key), [("unrelated/pkg", None)])
+  }
+}
+
+///|
+async test "legacy effective imports receive quickcheck and produce real witness" {
+  let dir = @fs.tmpdir(prefix="turtles-legacy-witness")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    let manifest =
+      #|// 日本語 😀 keeps parser offsets honest
+      #|import { "moonbitlang/core/json" }
+      #|options("import": [{"path": "moonbitlang/core/math", "alias": "m"}])
+    let source = "pub fn changed(x : Double) -> Double { @m.sin(x) + 1.0 }\n"
+    @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+    @fs.write_file(path_join(dir, "lib.mbt"), source)
+    let index = build_module_index(dir)
+    let entry = index.pkgs["."].fns["changed"]
+    assert_true(witness_eligible(index, entry) is None)
+    let offset = byte_offset_of(source, "+")
+    let result = {
+      ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+      packages: None,
+    }
+    assert_true(ensure_quickcheck_import(dir, "."))
+    let witnessed = witness_one(
+      dir,
+      entry,
+      result,
+      "changed_original",
+      "legacy guard",
+      "legacy witness",
+      60000,
+      None,
+      Some("native"),
+    )
+    assert_eq(witnessed.witness_skipped, None)
+    assert_true(witnessed.witness is Some(value) && value != "none")
+    let updated = @fs.read_file(path_join(dir, "moon.pkg")).text()
+    assert_true(
+      pkg_text_import_entries(updated, "source").contains(
+        ("moonbitlang/core/quickcheck", None),
+      ),
+    )
+    assert_true(ensure_quickcheck_import(dir, "."))
+    assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), updated)
+  })
+}
+
+///|
+async test "legacy override prevents purity from ignored modern imports" {
+  let dir = @fs.tmpdir(prefix="turtles-legacy-purity")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    @fs.write_file(
+      path_join(dir, "moon.pkg"),
+      "import { \"moonbitlang/core/math\" @m }\noptions(\"import\": [{\"path\": \"unknown/pkg\", \"alias\": \"m\"}])",
+    )
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn changed(x : Double) -> Double { @m.sin(x) + 1.0 }\n",
+    )
+    let index = build_module_index(dir)
+    assert_true(index.pkgs["."].fns["changed"].effects_unknown)
+    assert_true(
+      witness_eligible(index, index.pkgs["."].fns["changed"])
+      is Some(EffectsUnknown),
+    )
+  })
+}
+
+///|
+async test "quickcheck legacy insertion respects empty lists and aliases" {
+  let dir = @fs.tmpdir(prefix="turtles-legacy-quickcheck")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    for
+      manifest in [
+        "options(\"import\": [])", "options(\"import\": [{\"path\": \"moonbitlang/core/quickcheck\", \"alias\": \"qc\"}])",
+      ] {
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      assert_true(ensure_quickcheck_import(dir, "."), msg=manifest)
+      let entries = pkg_text_import_entries(
+        @fs.read_file(path_join(dir, "moon.pkg")).text(),
+        "source",
+      )
+      assert_true(entries.contains(("moonbitlang/core/quickcheck", None)))
+    }
+    let conflict = "options(\"import\": [{\"path\": \"other/pkg\", \"alias\": \"quickcheck\"}])"
+    @fs.write_file(path_join(dir, "moon.pkg"), conflict)
+    assert_false(ensure_quickcheck_import(dir, "."))
+    assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), conflict)
+  })
 }

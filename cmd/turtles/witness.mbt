@@ -158,6 +158,60 @@ async fn ensure_quickcheck_import(workspace : String, pkg_dir : String) -> Bool 
   let json_pkg = path_join(dir, "moon.pkg.json")
   if @fs.exists(text_pkg) {
     let text = @fs.read_file(text_pkg).text() catch { _ => return false }
+    let parsed = @moon_config.parse_moon_pkg(text)
+    if !parsed.diagnostics.errors.is_empty() {
+      return false
+    }
+    let mut legacy : @moon_config.Expr? = None
+    for statement in parsed.ast.0 {
+      let fields = match statement {
+        @moon_config.Statement::Assign(field) => [field]
+        @moon_config.Statement::Expr(
+          @moon_config.Expr::Apply(name="options", args~, ..),
+        ) => args
+        _ => []
+      }
+      for field in fields {
+        if field.key == "import" {
+          if legacy is Some(_) {
+            return false
+          }
+          legacy = Some(field.value)
+        }
+      }
+    }
+    if legacy is Some(value) {
+      guard pkg_legacy_import_entries(value) is Some(entries) else {
+        return false
+      }
+      for (path, alias_) in entries {
+        let name = alias_.unwrap_or(path.split("/").last().unwrap().to_owned())
+        if name == "quickcheck" {
+          return path == "moonbitlang/core/quickcheck"
+        }
+      }
+      guard value is @moon_config.Expr::Array(loc~, ..) else { return false }
+      // The parser reports Unicode scalar offsets; String slices use UTF-16.
+      let mut start = 0
+      let mut scalars = 0
+      for ch in text.iter() {
+        if scalars == loc.start.cnum {
+          break
+        }
+        start += ch.to_string().length()
+        scalars += 1
+      }
+      guard start >= 0 && start < text.length() && text[start] == '[' else {
+        return false
+      }
+      let updated = text[:start + 1].to_owned() +
+        "\n  \"moonbitlang/core/quickcheck\"," +
+        text[start + 1:].to_owned()
+      @fs.write_file(text_pkg, updated) catch {
+        _ => return false
+      }
+      return true
+    }
     let blocks = pkg_import_blocks(text)
     let mut has_regular = false
     for (range, scoped) in blocks {
