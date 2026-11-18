@@ -692,10 +692,20 @@ fn pkg_text_import_entries(
   if !result.diagnostics.errors.is_empty() {
     return []
   }
+  pkg_ast_import_entries(result.ast.0.iter().collect(), scope)
+}
+
+///|
+/// Resolve an already validated statement set. Purity callers always supply
+/// every statement, so visible conditional imports still fail closed.
+fn pkg_ast_import_entries(
+  statements : Array[@moon_config.Statement],
+  scope : String,
+) -> Array[(String, String?)] {
   // Legacy fields select package paths, but retained modern alias metadata
   // still applies. Collect both representations before resolving identities.
   let legacy : Map[String, Array[(String, String?)]] = Map([])
-  for statement in result.ast.0 {
+  for statement in statements {
     let fields = match statement {
       @moon_config.Statement::Assign(field) => [field]
       @moon_config.Statement::Expr(
@@ -723,7 +733,7 @@ fn pkg_text_import_entries(
     }
   }
   let blocks : Array[(String, Array[(String, String?)])] = []
-  for statement in result.ast.0 {
+  for statement in statements {
     if statement
       is @moon_config.Statement::Import(items~, kind~, conditions~, ..) {
       let key = match kind {

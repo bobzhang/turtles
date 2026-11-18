@@ -155,6 +155,47 @@ fn pkg_quickcheck_alias(entries : Array[(String, String?)]) -> String? {
 }
 
 ///|
+/// Unlike purity inference, QuickCheck binding needs no knowledge of unrelated
+/// imports. Remove conditional blocks only for this narrow lookup, then reject
+/// every possible conditional shadow of its package path or effective alias.
+fn pkg_text_quickcheck_alias(text : String, scope : String) -> String? {
+  let parsed = @moon_config.parse_moon_pkg(text)
+  if !parsed.diagnostics.errors.is_empty() {
+    return None
+  }
+  let unconditional : Array[@moon_config.Statement] = []
+  let conditional : Array[@moon_config.ImportItem] = []
+  for statement in parsed.ast.0 {
+    if statement
+      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) {
+      let visible = match kind {
+        Normal => true
+        Test => scope == "test"
+        Wbtest => scope == "wbtest"
+      }
+      if visible && !conditions.is_empty() {
+        for item in items {
+          conditional.push(item)
+        }
+        continue
+      }
+    }
+    unconditional.push(statement)
+  }
+  guard pkg_quickcheck_alias(pkg_ast_import_entries(unconditional, scope))
+    is Some(alias_) else {
+    return None
+  }
+  for item in conditional {
+    if item.path == "moonbitlang/core/quickcheck" ||
+      pkg_import_alias(item.path, item.alias_.map(pair => pair.0)) == alias_ {
+      return None
+    }
+  }
+  Some(alias_)
+}
+
+///|
 /// Resolve QuickCheck in the generated test file's compilation scope.
 /// Reuse scoped aliases when visible; otherwise add a regular source import
 /// and resolve again, including modern aliases retained by legacy lists.
@@ -177,10 +218,8 @@ async fn ensure_quickcheck_import(
       return None
     }
     let effective = pkg_text_import_entries(text, scope)
-    for (path, alias_) in effective {
-      if path == "moonbitlang/core/quickcheck" {
-        return Some(pkg_import_alias(path, alias_))
-      }
+    if pkg_text_quickcheck_alias(text, scope) is Some(alias_) {
+      return Some(alias_)
     }
     for (path, alias_) in effective {
       if pkg_import_alias(path, alias_) == "quickcheck" {
@@ -227,7 +266,7 @@ async fn ensure_quickcheck_import(
       @fs.write_file(text_pkg, updated) catch {
         _ => return None
       }
-      return pkg_quickcheck_alias(pkg_text_import_entries(updated, scope))
+      return pkg_text_quickcheck_alias(updated, scope)
     }
     let blocks = pkg_import_blocks(text)
     let mut has_regular = false
@@ -260,7 +299,7 @@ async fn ensure_quickcheck_import(
     @fs.write_file(text_pkg, updated) catch {
       _ => return None
     }
-    return pkg_quickcheck_alias(pkg_text_import_entries(updated, scope))
+    return pkg_text_quickcheck_alias(updated, scope)
   }
   if @fs.exists(json_pkg) {
     let text = @fs.read_file(json_pkg).text() catch { _ => return None }

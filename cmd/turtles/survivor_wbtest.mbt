@@ -1121,3 +1121,80 @@ async test "quickcheck aliases match generated test file scope" {
     assert_eq(ensure_quickcheck_import(dir, "."), Some("qc"))
   })
 }
+
+///|
+test "QuickCheck binding ignores unrelated conditions without relaxing purity" {
+  let unrelated = "import { \"moonbitlang/core/quickcheck\" @qc }\n#cfg(target = \"js\")\nimport { \"moonbitlang/core/math\" }"
+  assert_true(pkg_text_import_entries(unrelated, "source").is_empty())
+  assert_eq(pkg_text_quickcheck_alias(unrelated, "source"), Some("qc"))
+  for
+    conditional in [
+      "import { \"moonbitlang/core/quickcheck\" @other }", "import { \"moonbitlang/core/math\" @qc }",
+    ] {
+    let manifest = "import { \"moonbitlang/core/quickcheck\" @qc }\n#cfg(target = \"js\")\n" +
+      conditional
+    assert_eq(pkg_text_quickcheck_alias(manifest, "source"), None)
+    assert_true(pkg_text_import_entries(manifest, "source").is_empty())
+  }
+  assert_eq(
+    pkg_text_quickcheck_alias(
+      unrelated +
+      "\n#cfg(target = \"js\")\nimport { \"moonbitlang/core/math\" @qc } for \"test\"",
+      "source",
+    ),
+    Some("qc"),
+  )
+  assert_eq(
+    pkg_text_quickcheck_alias(
+      unrelated +
+      "\n#cfg(target = \"js\")\nimport { \"moonbitlang/core/math\" @qc } for \"test\"",
+      "test",
+    ),
+    None,
+  )
+}
+
+///|
+async test "unrelated conditional import produces a real witness but shadows fail closed" {
+  let dir = @fs.tmpdir(prefix="turtles-conditional-qc")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    for
+      conditional in [
+        "import { \"moonbitlang/core/math\" }", "import { \"moonbitlang/core/quickcheck\" @other }",
+        "import { \"moonbitlang/core/math\" @qc }",
+      ] {
+      let manifest = "import { \"moonbitlang/core/quickcheck\" @qc }\n#cfg(target = \"js\")\n" +
+        conditional
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let source = "pub fn changed(x : Int) -> Int { x + 1 }\n"
+      @fs.write_file(path_join(dir, "lib.mbt"), source)
+      let index = build_module_index(dir)
+      let offset = byte_offset_of(source, "+")
+      let result = {
+        ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+        packages: None,
+      }
+      let witnessed = witness_one(
+        dir,
+        index.pkgs["."].fns["changed"],
+        result,
+        "changed_original",
+        "conditional guard",
+        "conditional witness",
+        60000,
+        None,
+        Some("native"),
+      )
+      if conditional == "import { \"moonbitlang/core/math\" }" {
+        assert_eq(witnessed.witness_skipped, None)
+        assert_true(witnessed.witness is Some(value) && value != "none")
+        assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), manifest)
+      } else {
+        assert_eq(witnessed.witness_skipped, Some("harness-error"))
+        assert_eq(witnessed.witness, None)
+      }
+    }
+  })
+}
