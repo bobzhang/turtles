@@ -6,6 +6,10 @@
 source基点は [6f5e06a](https://github.com/gpui-mbt/turtles.mbt/commit/6f5e06a70e7de1b49a3249f1d91a98e5f0f7e2b2)
 （turtles 0.4.6）。PRの初期HEADは `6dffe4e07822910e48b441cfc4359508104245f2`。
 
+## 横断ロードマップ
+
+- [Mutation testing品質プログラム](20261117-mutation-testing-quality-program.md) — D0 diff選択からD4 PR/agent連携までの依存、fail-safeと計測ゲート。**program仕様のみpolished**であり、D1〜D4の個別実装契約・機能完成を意味しない。
+
 ## 実装順と依存関係
 
 | 優先度 | タスク | 確定した中心契約 | 着手条件 |
