@@ -77,7 +77,17 @@ fn parse_unified_sections(raw : Bytes) -> Array[DiffSection] raise {
       fail("missing unified diff new-side header")
     }
     let new_path = diff_header_path(input[i][4:].to_owned())
-    let (old_path, new_path) = diff_normalize_paths(old_path, new_path)
+    guard old_path != "/dev/null" || new_path != "/dev/null" else {
+      fail("both diff paths are /dev/null")
+    }
+    if old_path != "/dev/null" {
+      validate_diff_path(old_path)
+    }
+    if new_path != "/dev/null" {
+      validate_diff_path(new_path)
+    }
+    // Only a full Git section can establish removable path prefixes.
+
     i = i + 1
     if new_path != "/dev/null" {
       guard !seen.contains(new_path) else {

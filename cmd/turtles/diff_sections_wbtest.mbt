@@ -4,10 +4,13 @@ test "plain unified sections retain paths and hunks" {
     b"--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-old\n+new\n--- /dev/null\n+++ b/new file.mbt\n@@ -0,0 +1 @@\n+hello\n",
   )
   assert_eq(sections.length(), 2)
-  assert_eq((sections[0].old_path, sections[0].new_path), ("a.mbt", "a.mbt"))
+  assert_eq(
+    (sections[0].old_path, sections[0].new_path),
+    ("a/a.mbt", "b/a.mbt"),
+  )
   assert_eq(
     (sections[1].old_path, sections[1].new_path),
-    ("/dev/null", "new file.mbt"),
+    ("/dev/null", "b/new file.mbt"),
   )
   assert_eq(
     validate_diff_hunks("d", "a.mbt", b"new\n", sections[0].hunks).length(),
@@ -41,7 +44,7 @@ test "mixed Git and unified sections reject duplicates and unrecognized data" {
   let raw = b"diff --git a/a.mbt b/a.mbt\nindex 1234567..abcdef0 100644\n--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-a\n+b\n--- a/b.mbt\n+++ b/b.mbt\n@@ -1 +1 @@\n-a\n+c\n"
   let sections = parse_diff_sections(raw)
   assert_eq(sections.length(), 2)
-  assert_eq(sections[1].new_path, "b.mbt")
+  assert_eq(sections[1].new_path, "b/b.mbt")
   assert_true(
     (Some(parse_diff_sections(b"diff --cc conflict.mbt\n")) catch { _ => None })
     is None,
@@ -49,7 +52,7 @@ test "mixed Git and unified sections reject duplicates and unrecognized data" {
   assert_true(
     (Some(
       parse_diff_sections(
-        b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\n--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-a\n+b\n--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-a\n+b\n",
+        b"diff --git a/a.mbt b/a.mbt\nold mode 100644\nnew mode 100755\n--- a/a.mbt\n+++ b/a.mbt\n@@ -1 +1 @@\n-a\n+b\n--- a.mbt\n+++ a.mbt\n@@ -1 +1 @@\n-a\n+b\n",
       ),
     ) catch {
       _ => None
@@ -59,13 +62,10 @@ test "mixed Git and unified sections reject duplicates and unrecognized data" {
 }
 
 ///|
-test "Git binary payload remains opaque to UTF-8 decoding" {
-  let raw = @buffer.Buffer()
-  raw.write_bytes(b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\n")
-  raw.write_byte(b'A') // Git base85 length code; payload remains opaque.
-  raw.write_byte(0xff)
-  raw.write_bytes(b"\n\n")
-  let sections = parse_diff_sections(raw.to_bytes())
+test "Git binary payload is structurally validated without inflation" {
+  let sections = parse_diff_sections(
+    b"diff --git a/a.bin b/a.bin\nGIT binary patch\nliteral 1\nA00000\n\n",
+  )
   assert_eq(sections.length(), 1)
   assert_true(sections[0].binary)
 }
@@ -115,4 +115,16 @@ test "absent sides require zero start as well as zero count in both formats" {
     ] {
     assert_true((Some(parse_diff_sections(patch)) catch { _ => None }) is None)
   }
+}
+
+///|
+test "standalone one sided unified paths retain literal prefix directories" {
+  let added = parse_diff_sections(
+    b"--- /dev/null\n+++ b/calc.mbt\n@@ -0,0 +1 @@\n+true\n",
+  )
+  assert_eq(added[0].new_path, "b/calc.mbt")
+  let deleted = parse_diff_sections(
+    b"--- a/calc.mbt\n+++ /dev/null\n@@ -1 +0,0 @@\n-true\n",
+  )
+  assert_eq(deleted[0].old_path, "a/calc.mbt")
 }

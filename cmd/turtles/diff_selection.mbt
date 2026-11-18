@@ -191,20 +191,36 @@ fn select_diff_mutations(
   let selected : Array[Mutation] = []
   for mutation in mutations {
     match inputs.ranges.get(mutation.path) {
-      Some(ranges) => {
-        let mut intersects = false
-        for range in ranges {
-          if diff_ranges_intersect(mutation.start, mutation.end, range) {
-            intersects = true
-            break
-          }
-        }
-        if intersects {
+      Some(ranges) =>
+        if diff_sorted_ranges_intersect(mutation.start, mutation.end, ranges) {
           selected.push(mutation)
         }
-      }
       None => ()
     }
   }
   { mutations: selected, excluded: mutations.length() - selected.length(), }
+}
+
+///|
+/// Ranges from validate_diff_hunks are positive, sorted and nonoverlapping.
+/// Find the first range ending after the start of this half-open span.
+fn diff_sorted_ranges_intersect(
+  start : Int32,
+  end : Int32,
+  ranges : Array[DiffByteRange],
+) -> Bool {
+  if start >= end {
+    return false
+  }
+  let mut low = 0
+  let mut high = ranges.length()
+  while low < high {
+    let middle = low + (high - low) / 2
+    if ranges[middle].end <= start {
+      low = middle + 1
+    } else {
+      high = middle
+    }
+  }
+  low < ranges.length() && diff_ranges_intersect(start, end, ranges[low])
 }

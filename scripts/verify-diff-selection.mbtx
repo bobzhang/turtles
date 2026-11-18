@@ -486,7 +486,7 @@ async fn main {
       }
     }
     @fs.write_file(
-      patch, "--- a/calc.mbt\n+++ b/calc.mbt\n@@ -2 +2 @@\n-old\n+  stale\n",
+      patch, "--- calc.mbt\n+++ calc.mbt\n@@ -2 +2 @@\n-old\n+  stale\n",
     )
     let failed_out = join(temp, "stale-out")
     let failed_args = base.copy()
@@ -500,7 +500,7 @@ async fn main {
       fail("stale diff was not rejected before baseline: \{failed}")
     }
     @fs.write_file(
-      patch, "--- a/calc_test.mbt\n+++ b/calc_test.mbt\n@@ -1 +1 @@\n-old\n+test \"arithmetic\" {\n",
+      patch, "--- calc_test.mbt\n+++ calc_test.mbt\n@@ -1 +1 @@\n-old\n+test \"arithmetic\" {\n",
     )
     let test_only = run_checked(executable, base, log, 0)
     guard test_only.contains("No mutants selected") else {
@@ -515,7 +515,7 @@ async fn main {
     ignore(check_report(@json.parse(@fs.read_file(report_path).text()), 0, 0))
     let targets_patch = join(temp, "targets.diff")
     @fs.write_file(
-      targets_patch, "--- a/native_only.mbt\n+++ b/native_only.mbt\n@@ -3 +3 @@\n-  a / b\n+  a * b\n--- a/js_only.mbt\n+++ b/js_only.mbt\n@@ -3 +3 @@\n-  a + b\n+  a - b\n",
+      targets_patch, "--- native_only.mbt\n+++ native_only.mbt\n@@ -3 +3 @@\n-  a / b\n+  a * b\n--- js_only.mbt\n+++ js_only.mbt\n@@ -3 +3 @@\n-  a + b\n+  a - b\n",
     )
     let targets_out = join(temp, "target-partition")
     let target_args = [

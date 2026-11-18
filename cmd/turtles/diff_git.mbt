@@ -286,11 +286,28 @@ fn diff_binary_records(lines : Array[Bytes], start : Int32) -> Int32 raise {
       guard !diff_starts(lines[i], b"diff --git ") else {
         fail("unterminated binary patch record")
       }
-      // Git base85 payload lines begin with an alphabetic length code.
-      // In particular, never swallow a prefixless unified section as payload.
-      let first = lines[i][0]
-      guard (first >= b'A' && first <= b'Z') || (first >= b'a' && first <= b'z') else {
+      let payload = lines[i]
+      let first = payload[0]
+      let count = if first >= b'A' && first <= b'Z' {
+        first.to_int() - b'A'.to_int() + 1
+      } else if first >= b'a' && first <= b'z' {
+        first.to_int() - b'a'.to_int() + 27
+      } else {
         fail("invalid binary patch payload framing")
+      }
+      guard payload.length() == 1 + 5 * ((count + 3) / 4) else {
+        fail("invalid binary patch payload width")
+      }
+      let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~"
+      for byte in payload[1:] {
+        let mut valid = false
+        for allowed in alphabet {
+          if byte == allowed {
+            valid = true
+            break
+          }
+        }
+        guard valid else { fail("invalid binary patch base85 byte") }
       }
       i = i + 1
     }
