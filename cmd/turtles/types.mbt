@@ -320,7 +320,8 @@ struct JsonReport {
   module_path : String
   turtles_version : String
   moon_version : String?
-  target : String?
+  // Explicit null distinguishes a default-target run from missing provenance.
+  target : Json
   /// Mutants Moon does not compile for the selected target: reported but
   /// never classified, so they cannot distort the score.
   inactive_mutants : Int32

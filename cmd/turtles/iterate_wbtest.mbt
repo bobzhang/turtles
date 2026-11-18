@@ -259,7 +259,7 @@ async test "iterate round-trips killed_by attribution from a prior report" {
       },
     ]).stringify()
     let mutant_json = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"arithmetic\",\"original\":\"+\",\"replacement\":\"-\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1,\"killed_by\":\{kills_json}}"
-    let report = "{\"schema\":4,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{mutant_json}]}"
+    let report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{mutant_json}]}"
     @fs.write_file(path_join(temp, "report.json"), report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(prior) else {
       fail("expected prior report to load")
@@ -280,7 +280,7 @@ async test "iterate round-trips killed_by attribution from a prior report" {
     }
     // A prior row without killed_by still degrades to "unavailable".
     let bare_json = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"arithmetic\",\"original\":\"+\",\"replacement\":\"-\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
-    let bare_report = "{\"schema\":4,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{bare_json}]}"
+    let bare_report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":1,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":1,\"classified\":1,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{bare_json}]}"
     @fs.write_file(path_join(temp, "report.json"), bare_report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(bare) else {
       fail("expected prior report to load")
@@ -301,7 +301,7 @@ async test "iterate reloads boundary rows without borrowing comparison verdicts"
     // tell them apart, which is exactly what the identity tuple covers.
     let comparison_row = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"comparison\",\"original\":\"<\",\"replacement\":\">\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
     let boundary_row = "{\"path\":\"a.mbt\",\"offset\":0,\"end\":1,\"group\":\"boundary\",\"original\":\"<\",\"replacement\":\"<=\",\"outcome\":\"KILLED\",\"line\":1,\"column\":1}"
-    let report = "{\"schema\":4,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":2,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":2,\"classified\":2,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{comparison_row},\{boundary_row}]}"
+    let report = "{\"schema\":4,\"target\":null,\"execution\":\"completed\",\"run_id\":\"test\",\"diagnostics\":null,\"inactive_mutants\":0,\"selection\":{\"version\":1,\"scope\":\"configured\",\"discovered\":2,\"diff_excluded\":0,\"target_inactive\":0,\"shard_excluded\":0,\"selected\":2,\"classified\":2,\"diff\":null,\"shard\":null},\"test_scope\":\"module\",\"turtles_version\":\"\{turtles_version}\",\"moon_version\":\"moon x\",\"files\":{\"a.mbt\":\"hash-a\"},\"mutants\":[\{comparison_row},\{boundary_row}]}"
     @fs.write_file(path_join(temp, "report.json"), report)
     guard load_prior_report(path_join(temp, "report.json")) is Some(prior) else {
       fail("expected prior report to load")
@@ -444,4 +444,84 @@ test "iteration rejects malformed mutation identity and amplification fields" {
     ] {
     assert_true(parse_prior_mutant(@json.parse(bad)) is None)
   }
+}
+
+///|
+async test "schema four target provenance is explicit and cannot cross backend" {
+  let root = @fs.tmpdir(prefix="turtles-target-provenance")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(root, recursive=true))
+    let path = path_join(root, "report.json")
+    let result = report_test_result(Killed)
+    let files : Map[String, String] = { "m.mbt": "hash" }
+    let report = build_report(
+      "module",
+      Some("moon test"),
+      1L,
+      1L,
+      1L,
+      "module",
+      [result],
+      [],
+      files,
+      0.0,
+      target=Some("native"),
+    )
+    write_json_report(path, report)
+    let native_text = @fs.read_file(path).text()
+    guard load_prior_report(path) is Some(native_prior) else {
+      fail("expected native prior")
+    }
+    assert_true(
+      prior_reusable_outcome(
+        native_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+        target=Some("native"),
+      )
+      is Some(_),
+    )
+    assert_true(
+      prior_reusable_outcome(
+        native_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+      )
+      is None,
+    )
+    let json = @json.parse(native_text)
+    guard json is Object(fields) else { fail("expected report object") }
+    fields.remove("target")
+    @fs.write_file(path, json.stringify())
+    assert_true(load_prior_report(path) is None)
+    let default_report = build_report(
+      "module",
+      Some("moon test"),
+      1L,
+      1L,
+      1L,
+      "module",
+      [result],
+      [],
+      files,
+      0.0,
+    )
+    write_json_report(path, default_report)
+    assert_true(@fs.read_file(path).text().contains("\"target\": null"))
+    guard load_prior_report(path) is Some(default_prior) else {
+      fail("expected default prior")
+    }
+    assert_true(default_prior.target is None)
+    assert_true(
+      prior_reusable_outcome(
+        default_prior,
+        result.mutation,
+        files,
+        Some("moon test"),
+      )
+      is Some(_),
+    )
+  })
 }

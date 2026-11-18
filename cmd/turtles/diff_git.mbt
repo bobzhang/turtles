@@ -379,6 +379,21 @@ fn parse_git_diff_section(
       (new_raw == "/dev/null" || new_raw == paths.raw_new) else {
       fail("Git file headers disagree with section path prefixes")
     }
+    // Interpret file headers using the single prefix mode established above.
+    old_path = if old_raw == "/dev/null" || !paths.prefixed {
+      old_raw
+    } else {
+      old_raw[2:].to_owned()
+    }
+    new_path = if new_raw == "/dev/null" || !paths.prefixed {
+      new_raw
+    } else {
+      new_raw[2:].to_owned()
+    }
+    guard (old_path == "/dev/null" || old_path == paths.old_path) &&
+      (new_path == "/dev/null" || new_path == paths.new_path) else {
+      fail("Git file headers conflict with resolved section paths")
+    }
     section_paths = Some(paths)
     has_headers = true
     i = i + 1
