@@ -725,41 +725,105 @@ fn pkg_text_import_entries(
   if !result.diagnostics.errors.is_empty() {
     return []
   }
+  let blocks : Array[(String, Array[(String, String?)])] = []
+  for statement in result.ast.0 {
+    match statement {
+      @moon_config.Statement::Import(items~, kind~, conditions~, ..) => {
+        // No target-condition context is available to this analysis.
+        if !conditions.is_empty() {
+          return []
+        }
+        let key = match kind {
+          Normal => "source"
+          Test => "test"
+          Wbtest => "wbtest"
+        }
+        let imports : Array[(String, String?)] = []
+        for item in items {
+          imports.push((item.path, item.alias_.map(pair => pair.0)))
+        }
+        blocks.push((key, imports))
+      }
+      _ => {
+        // The parser retains accepted legacy options and assignments instead
+        // of rewriting them into Import statements. Include their identities.
+        let fields = match statement {
+          @moon_config.Statement::Assign(field) => [field]
+          @moon_config.Statement::Expr(
+            @moon_config.Expr::Apply(name="options", args~, ..),
+          ) => args
+          _ => []
+        }
+        for field in fields {
+          let key = match field.key {
+            "import" => "source"
+            "test-import" => "test"
+            "wbtest-import" => "wbtest"
+            _ => continue
+          }
+          guard pkg_legacy_import_entries(field.value) is Some(imports) else {
+            return []
+          }
+          blocks.push((key, imports))
+        }
+      }
+    }
+  }
   let entries : Array[(String, String?)] = []
   let seen : Map[String, Bool] = Map([])
-  for statement in result.ast.0 {
-    guard statement
-      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) else {
-      continue
-    }
-    // This analysis has no target-condition context. Do not grant a pure
-    // import identity that may be absent or shadowed on the selected target.
-    if !conditions.is_empty() {
-      return []
-    }
-    let key = match kind {
-      Normal => "source"
-      Test => "test"
-      Wbtest => "wbtest"
-    }
-    // The new parser permits repeated blocks. Preserve our prior fail-closed
-    // behavior rather than silently changing alias resolution during upgrade.
+  for (key, imports) in blocks {
+    // Keep fail-closed resolution across both modern and legacy blocks.
     if seen.contains(key) {
       return []
     }
     seen[key] = true
-    if key != "source" && key != scope {
-      continue
-    }
-    for item in items {
-      let alias_ = match item.alias_ {
-        Some((name, _)) => Some(name)
-        None => None
+    if key == "source" || key == scope {
+      for entry in imports {
+        entries.push(entry)
       }
-      entries.push((item.path, alias_))
     }
   }
   entries
+}
+
+///|
+/// Decode legacy import values without treating malformed identities as pure.
+fn pkg_legacy_import_entries(
+  value : @moon_config.Expr,
+) -> Array[(String, String?)]? {
+  guard value is @moon_config.Expr::Array(items~, ..) else { return None }
+  let entries : Array[(String, String?)] = []
+  for item in items {
+    match item {
+      @moon_config.Expr::String(str~, ..) => entries.push((str, None))
+      @moon_config.Expr::Map(fields~, ..) => {
+        let mut path : String? = None
+        let mut alias_ : String? = None
+        for field in fields {
+          if field.key == "path" || field.key == "alias" {
+            guard field.value is @moon_config.Expr::String(str~, ..) else {
+              return None
+            }
+            if field.key == "path" {
+              if path is Some(_) {
+                return None
+              }
+              path = Some(str)
+            } else {
+              if alias_ is Some(_) {
+                return None
+              }
+              alias_ = Some(str)
+            }
+          }
+        }
+        guard path is Some(path) else { return None }
+        entries.push((path, alias_))
+      }
+      _ => return None
+    }
+  }
+  Some(entries)
 }
 
 ///|

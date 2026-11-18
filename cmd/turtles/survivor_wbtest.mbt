@@ -687,3 +687,66 @@ async test "manifest option deprecation preserves pure import and witness identi
     }
   })
 }
+
+///|
+async test "legacy option imports preserve scopes aliases and pure witnesses" {
+  let source =
+    #|options(
+    #|  "import": [{ "path": "moonbitlang/core/math", "alias": "m" }],
+    #|  "test-import": [{ "path": "moonbitlang/core/quickcheck", "alias": "qc" }],
+    #|  "wbtest-import": ["moonbitlang/core/quickcheck"],
+    #|)
+  let result = @moon_config.parse_moon_pkg(source)
+  assert_true(result.diagnostics.errors.is_empty())
+  assert_false(result.diagnostics.warnings.is_empty())
+  assert_eq(pkg_text_import_entries(source, "source"), [
+    ("moonbitlang/core/math", Some("m")),
+  ])
+  assert_eq(pkg_text_import_entries(source, "test"), [
+    ("moonbitlang/core/math", Some("m")),
+    ("moonbitlang/core/quickcheck", Some("qc")),
+  ])
+  assert_eq(pkg_text_import_entries(source, "wbtest"), [
+    ("moonbitlang/core/math", Some("m")),
+    ("moonbitlang/core/quickcheck", None),
+  ])
+  let dir = @fs.tmpdir(prefix="turtles-legacy-import")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    @fs.write_file(path_join(dir, "moon.pkg"), source)
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn pure_alias(x : Double) -> Double { @m.sin(x) }\n",
+    )
+    let imports = pkg_import_map(
+      dir,
+      ".",
+      Some("turtles/index_wbtest"),
+      Map([]),
+      "source",
+    )
+    assert_eq(imports.get("m"), Some("moonbitlang/core/math"))
+    let index = build_module_index(dir)
+    let entry = index.pkgs["."].fns["pure_alias"]
+    assert_false(entry.effects_unknown)
+    assert_true(witness_eligible(index, entry) is None)
+  })
+}
+
+///|
+test "legacy and modern import blocks reject duplicate or malformed identities" {
+  for
+    source in [
+      "import { \"unrelated/math\" }\noptions(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"math\"}])",
+      "options(\"test-import\": [\"unrelated/math\"])\nimport { \"moonbitlang/core/math\" } for \"test\"",
+      "options(\"wbtest-import\": [\"unrelated/math\"])\nimport { \"moonbitlang/core/math\" } for \"wbtest\"",
+      "options(\"import\": [42])", "options(\"import\": [{\"alias\": \"m\"}])", "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": 42}])",
+      "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"path\": \"unrelated/math\"}])",
+      "options(\"import\": [\"moonbitlang/core/math\"])\n#cfg(false)\nimport { \"unrelated/math\" } for \"test\"",
+    ] {
+    for scope in ["source", "test", "wbtest"] {
+      assert_true(pkg_text_import_entries(source, scope).is_empty())
+    }
+  }
+}
