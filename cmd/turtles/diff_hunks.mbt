@@ -89,6 +89,7 @@ fn parse_diff_hunk(
   let mut previous : Byte = 0
   let mut old_ended = false
   let mut new_ended = false
+  let mut changed = false
   while i < input.length() {
     let line = input[i]
     if line == b"\\ No newline at end of file" {
@@ -110,6 +111,9 @@ fn parse_diff_hunk(
     }
     guard line.length() > 0 else { fail("empty diff hunk line") }
     let kind = line[0]
+    if kind == b'+' || kind == b'-' {
+      changed = true
+    }
     if kind == b' ' || kind == b'-' {
       guard !old_ended && old_used < old_count else {
         fail("old hunk count mismatch")
@@ -139,6 +143,7 @@ fn parse_diff_hunk(
   guard old_used == old_count && new_used == new_count else {
     fail("truncated hunk or count mismatch")
   }
+  guard changed else { fail("hunk contains no additions or deletions") }
   (
     {
       old_start,

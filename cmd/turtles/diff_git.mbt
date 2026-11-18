@@ -245,7 +245,8 @@ fn diff_binary_header_matches(
     let normalized = Some(diff_normalize_paths(old_raw, new_raw)) catch {
       _ => None
     }
-    if normalized == Some((expected_old, expected_new)) {
+    if normalized == Some((expected_old, expected_new)) ||
+      (normalized is Some(_) && (old_raw, new_raw) == (expected_old, expected_new)) {
       matches = matches + 1
     }
   }
@@ -319,10 +320,20 @@ fn parse_git_diff_section(
     } else {
       false
     }
-    let normalized = if raw_matches {
-      (old_raw, new_raw)
-    } else {
-      diff_normalize_paths(old_raw, new_raw)
+    let normalized = match (meta.rename_from, meta.rename_to) {
+      (Some(from), Some(to)) => {
+        let stripped = diff_normalize_paths(old_raw, new_raw)
+        guard (old_raw, new_raw) == (from, to) || stripped == (from, to) else {
+          fail("rename metadata conflicts with file headers")
+        }
+        (from, to)
+      }
+      _ =>
+        if raw_matches {
+          (old_raw, new_raw)
+        } else {
+          diff_normalize_paths(old_raw, new_raw)
+        }
     }
     old_path = normalized.0
     new_path = normalized.1
@@ -394,9 +405,8 @@ fn parse_git_diff_section(
     binary = true
     i = diff_binary_records(lines, i + 1)
   }
-  if meta.similarity == Some(100) && (!hunks.is_empty() || binary) {
-    fail("100% rename similarity conflicts with content changes")
-  }
+  // Git similarity counts reusable content, not its order: a 100% rename
+  // may still carry text hunks (for example, reordered lines).
   if meta.similarity is Some(score) &&
     score < 100 &&
     hunks.is_empty() &&
