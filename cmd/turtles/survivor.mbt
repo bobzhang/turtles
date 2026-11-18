@@ -692,7 +692,8 @@ fn pkg_text_import_entries(
   if !result.diagnostics.errors.is_empty() {
     return []
   }
-  // Legacy fields replace modern blocks of the same scope, even when empty.
+  // Legacy fields select package paths, but retained modern alias metadata
+  // still applies. Collect both representations before resolving identities.
   let legacy : Map[String, Array[(String, String?)]] = Map([])
   for statement in result.ast.0 {
     let fields = match statement {
@@ -730,7 +731,7 @@ fn pkg_text_import_entries(
         Test => "test"
         Wbtest => "wbtest"
       }
-      if (key != "source" && key != scope) || legacy.contains(key) {
+      if key != "source" && key != scope {
         continue
       }
       if !conditions.is_empty() {
@@ -741,46 +742,57 @@ fn pkg_text_import_entries(
       )
     }
   }
-  for key in ["source", "test", "wbtest"] {
-    if legacy.get(key) is Some(imports) {
-      blocks.push((key, imports))
-    }
-  }
-  // Moon resolves repeated paths within each scope before checking aliases.
-  let effective : Map[String, Array[(String, String?)]] = Map([])
+  let modern : Map[String, Array[(String, String?)]] = Map([])
   for (key, imports) in blocks {
-    let combined = effective.get(key).unwrap_or([])
+    let combined = modern.get(key).unwrap_or([])
     for entry in imports {
       combined.push(entry)
     }
-    effective[key] = combined
+    modern[key] = combined
+  }
+  let selected : Array[(String, String?)] = []
+  let aliases : Array[(String, String?)] = []
+  // Scoped imports replace source bindings for the same package path.
+  for key in ["source", "test", "wbtest"] {
+    let items = modern.get(key).unwrap_or([])
+    for entry in items {
+      aliases.push(entry)
+    }
+    for entry in legacy.get(key).unwrap_or(items) {
+      selected.push(entry)
+    }
+  }
+  let modern_aliases : Map[String, String?] = Map([])
+  for (path, alias_) in pkg_last_path_entries(aliases) {
+    modern_aliases[path] = alias_
   }
   let entries : Array[(String, String?)] = []
   let bindings : Map[String, String] = Map([])
-  for key in ["source", "test", "wbtest"] {
-    for
-      (path, alias_) in pkg_last_path_entries(effective.get(key).unwrap_or([])) {
-      let name = match alias_ {
-        Some(name) => name
-        None =>
-          match path.rev_find("/") {
-            Some(slash) => path[slash + 1:].to_owned()
-            None => path
-          }
-      }
-      match bindings.get(name) {
-        Some(previous) => {
-          if previous != path {
-            return []
-          }
-          // Repeating the same identity cannot change its purity or scope.
-          continue
-        }
-        None => ()
-      }
-      bindings[name] = path
-      entries.push((path, alias_))
+  for (path, legacy_alias) in pkg_last_path_entries(selected) {
+    let alias_ = match modern_aliases.get(path) {
+      Some(Some(name)) => Some(name)
+      _ => legacy_alias
     }
+    let name = match alias_ {
+      Some(name) => name
+      None =>
+        match path.rev_find("/") {
+          Some(slash) => path[slash + 1:].to_owned()
+          None => path
+        }
+    }
+    match bindings.get(name) {
+      Some(previous) => {
+        if previous != path {
+          return []
+        }
+        // Repeating the same identity cannot change its purity or scope.
+        continue
+      }
+      None => ()
+    }
+    bindings[name] = path
+    entries.push((path, alias_))
   }
   entries
 }

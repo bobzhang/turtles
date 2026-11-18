@@ -145,13 +145,23 @@ fn witness_appendix(
 }
 
 ///|
-/// Insert `"moonbitlang/core/quickcheck"` into the package's regular
-/// imports when it is not already there (scoped `for "test"`/`"wbtest"`
-/// blocks do not cover a regular source file). Updates only when missing; the
-/// manifest ends up with the import, returning its effective alias.
+fn pkg_quickcheck_alias(entries : Array[(String, String?)]) -> String? {
+  for (path, alias_) in entries {
+    if path == "moonbitlang/core/quickcheck" {
+      return Some(pkg_import_alias(path, alias_))
+    }
+  }
+  None
+}
+
+///|
+/// Resolve QuickCheck in the generated test file's compilation scope.
+/// Reuse scoped aliases when visible; otherwise add a regular source import
+/// and resolve again, including modern aliases retained by legacy lists.
 async fn ensure_quickcheck_import(
   workspace : String,
   pkg_dir : String,
+  scope~ : String = "source",
 ) -> String? {
   let dir = if pkg_dir == "." {
     workspace
@@ -166,7 +176,7 @@ async fn ensure_quickcheck_import(
     if !parsed.diagnostics.errors.is_empty() {
       return None
     }
-    let effective = pkg_text_import_entries(text, "source")
+    let effective = pkg_text_import_entries(text, scope)
     for (path, alias_) in effective {
       if path == "moonbitlang/core/quickcheck" {
         return Some(pkg_import_alias(path, alias_))
@@ -217,7 +227,7 @@ async fn ensure_quickcheck_import(
       @fs.write_file(text_pkg, updated) catch {
         _ => return None
       }
-      return Some("quickcheck")
+      return pkg_quickcheck_alias(pkg_text_import_entries(updated, scope))
     }
     let blocks = pkg_import_blocks(text)
     let mut has_regular = false
@@ -250,7 +260,7 @@ async fn ensure_quickcheck_import(
     @fs.write_file(text_pkg, updated) catch {
       _ => return None
     }
-    return Some("quickcheck")
+    return pkg_quickcheck_alias(pkg_text_import_entries(updated, scope))
   }
   if @fs.exists(json_pkg) {
     let text = @fs.read_file(json_pkg).text() catch { _ => return None }
@@ -261,9 +271,13 @@ async fn ensure_quickcheck_import(
       Some(_) => return None
       None => []
     }
-    let effective = pkg_last_path_entries(
-      pkg_json_import_entries(text, "import"),
-    )
+    let visible = pkg_json_import_entries(text, "import")
+    if scope != "source" {
+      for entry in pkg_json_import_entries(text, "\{scope}-import") {
+        visible.push(entry)
+      }
+    }
+    let effective = pkg_last_path_entries(visible)
     for (path, alias_) in effective {
       if path == "moonbitlang/core/quickcheck" {
         return Some(pkg_import_alias(path, alias_))
@@ -370,7 +384,19 @@ async fn witness_one(
   let mutated = apply_mutation(source, result.mutation) catch {
     _ => return harness_error
   }
-  guard (ensure_quickcheck_import(workspace, entry.pkg) catch { _ => None })
+  guard (ensure_quickcheck_import(
+      workspace,
+      entry.pkg,
+      scope=if entry.file.has_suffix("_wbtest.mbt") {
+        "wbtest"
+      } else if entry.file.has_suffix("_test.mbt") {
+        "test"
+      } else {
+        "source"
+      },
+    ) catch {
+      _ => None
+    })
     is Some(quickcheck_alias) else {
     return harness_error
   }

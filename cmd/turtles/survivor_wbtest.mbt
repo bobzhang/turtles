@@ -998,3 +998,126 @@ async test "effective quickcheck aliases and duplicate paths produce Moon witnes
     })
   }
 }
+
+///|
+test "legacy path selection preserves retained modern alias metadata" {
+  for
+    text in [
+      "import { \"moonbitlang/core/math\" @modern }\noptions(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"legacy\"}])",
+      "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"legacy\"}])\nimport { \"moonbitlang/core/math\" @modern }",
+      "import { \"moonbitlang/core/math\" @modern }\noptions(\"import\": [\"moonbitlang/core/math\"])",
+    ] {
+    assert_eq(pkg_text_import_entries(text, "source"), [
+      ("moonbitlang/core/math", Some("modern")),
+    ])
+  }
+  assert_eq(
+    pkg_text_import_entries(
+      "import { \"moonbitlang/core/math\" }\noptions(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"legacy\"}])",
+      "source",
+    ),
+    [("moonbitlang/core/math", Some("legacy"))],
+  )
+  let scoped = "import { \"moonbitlang/core/quickcheck\" @q }\nimport { \"moonbitlang/core/quickcheck\" @qc, \"moonbitlang/core/math\" @q } for \"wbtest\""
+  assert_eq(pkg_text_import_entries(scoped, "wbtest"), [
+    ("moonbitlang/core/quickcheck", Some("qc")),
+    ("moonbitlang/core/math", Some("q")),
+  ])
+}
+
+///|
+async test "conflicting mixed aliases cannot turn effectful local calls into pure math" {
+  let dir = @fs.tmpdir(prefix="turtles-mixed-purity")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    @fs.mkdir(path_join(dir, "impure"))
+    @fs.write_file(path_join(dir, "impure/moon.pkg"), "")
+    @fs.write_file(
+      path_join(dir, "impure/lib.mbt"),
+      "pub fn sin(x : Double) -> Double { println(\"effect\"); x }\n",
+    )
+    let modern = "import { \"moonbitlang/core/math\" @original, \"turtles/index_wbtest/impure\" @m }"
+    let legacy = "options(\"import\": [{\"path\": \"moonbitlang/core/math\", \"alias\": \"m\"}, {\"path\": \"turtles/index_wbtest/impure\", \"alias\": \"original\"}])"
+    @fs.write_file(
+      path_join(dir, "lib.mbt"),
+      "pub fn changed(x : Double) -> Double { @m.sin(x) + 1.0 }\n",
+    )
+    for manifest in [modern + "\n" + legacy, legacy + "\n" + modern] {
+      @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+      let index = build_module_index(dir)
+      assert_true(
+        witness_eligible(index, index.pkgs["."].fns["changed"])
+        is Some(EffectsUnknown),
+      )
+      assert_true(
+        run_moon_command(dir, ["check"], 60000, None, target=Some("native"))
+        is CommandSuccess,
+      )
+    }
+  })
+}
+
+///|
+async test "quickcheck aliases match generated test file scope" {
+  let dir = @fs.tmpdir(prefix="turtles-scoped-qc")
+  @async.with_task_group(group => {
+    group.add_defer(() => @fs.rmdir(dir, recursive=true))
+    write_index_module(dir)
+    let manifest = "import { \"moonbitlang/core/quickcheck\" @base }\nimport { \"moonbitlang/core/quickcheck\" @white } for \"wbtest\"\nimport { \"moonbitlang/core/quickcheck\" @black } for \"test\""
+    @fs.write_file(path_join(dir, "moon.pkg"), manifest)
+    for
+      (scope, file, alias_) in [
+        ("source", "lib.mbt", "base"),
+        ("wbtest", "lib_wbtest.mbt", "white"),
+        ("test", "lib_test.mbt", "black"),
+      ] {
+      assert_eq(ensure_quickcheck_import(dir, ".", scope~), Some(alias_))
+      @fs.write_file(
+        path_join(dir, file),
+        "test \"scope \{scope}\" { @\{alias_}.check((x : Int) => x == x) }\n",
+      )
+      assert_true(
+        run_moon_command(dir, ["test"], 60000, None, target=Some("native"))
+        is CommandSuccess,
+      )
+      @fs.remove(path_join(dir, file))
+    }
+    assert_eq(@fs.read_file(path_join(dir, "moon.pkg")).text(), manifest)
+    // The existing source-appended harness is compiled again with white-box
+    // imports. Different aliases across those compilations are unsupported:
+    // report harness-error, never a successful witness or witness:none.
+    let source = "pub fn changed(x : Int) -> Int { x + 1 }\n"
+    @fs.write_file(path_join(dir, "lib.mbt"), source)
+    @fs.write_file(
+      path_join(dir, "lib_wbtest.mbt"),
+      "test \"whitebox\" { assert_true(true) }\n",
+    )
+    let index = build_module_index(dir)
+    let offset = byte_offset_of(source, "+")
+    let result = {
+      ..survived_result(span_mutation("lib.mbt", offset, offset + 1, "+")),
+      packages: None,
+    }
+    let witnessed = witness_one(
+      dir,
+      index.pkgs["."].fns["changed"],
+      result,
+      "changed_original",
+      "scope guard",
+      "scope witness",
+      60000,
+      None,
+      Some("native"),
+    )
+    assert_eq(witnessed.witness_skipped, Some("harness-error"))
+    assert_eq(witnessed.witness, None)
+    // A modern alias on a path excluded by the legacy list becomes effective
+    // when the witness adds that path back to the legacy source list.
+    @fs.write_file(
+      path_join(dir, "moon.pkg"),
+      "import { \"moonbitlang/core/quickcheck\" @qc }\noptions(\"import\": [])",
+    )
+    assert_eq(ensure_quickcheck_import(dir, "."), Some("qc"))
+  })
+}
