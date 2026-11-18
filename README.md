@@ -12,15 +12,17 @@ The supported way to install `turtles` is `moon install`, which builds the nativ
 
 ### Stable — Mooncakes
 
-The registry package is the default install path. **No turtles repository clone and no Python interpreter are required** to install or run the CLI; `moon install` fetches the published Mooncakes module and builds the native executable. The MoonBit toolchain remains required at runtime because turtles invokes `moon check` and `moon test` for the project under test. The published 0.4.7 package's pinned install command is:
+The registry package is the default install path. **No turtles repository clone and no Python interpreter are required** to install or run the CLI; `moon install` fetches the published Mooncakes module and builds the native executable. The MoonBit toolchain remains required at runtime because turtles invokes `moon check` and `moon test` for the project under test. Use the latest stable MoonBit toolchain. The published 0.5.0 package's pinned install command is:
 
 ```sh
-moon install f4ah6o/turtles/cmd/turtles@0.4.7
+moon install f4ah6o/turtles/cmd/turtles@0.5.0
 ```
 
 The installed `turtles` executable does not run any of the repository's `scripts/*.py` files. Those scripts are for contributor CI, release verification, platform regressions, and an optional experimental proof companion, not for mutation testing users. `.mbtx` is useful for standalone MoonBit automation (including our self-E2E report validators), but it is not needed to launch this native CLI. `moonx` runs published Wasm executables; `cmd/turtles` currently supports native only and uses native process-control stubs, so use `moon install` or the native release asset rather than `moonx`.
 
-Version 0.4.7 fixes the MoonBit 0.1.20261012 compatibility and obsolete dependency-manifest errors affecting 0.4.6, and pins `prettyprinter@0.4.11`. Both the Mooncakes package and [v0.4.7 native release assets](https://github.com/gpui-mbt/turtles.mbt/releases/tag/v0.4.7) are published. CI independently tests registry installation and checksum-verified native assets on Linux x86_64, macOS Apple Silicon, and Windows x86_64, from unrelated modules with Python commands blocked and without checking out turtles. Windows source-package installation also requires an MSVC build environment. Windows native-asset CI currently disables the optional MSVC `vctip.exe` helper in its disposable runner: a fresh, unmodified toolchain can leave the 0.4.7 CLI waiting after baseline tests pass. Prefer the Mooncakes install route; the remaining cold-start limitation is tracked in [this follow-up](issues/open/20261014-windows-cold-native-compiler-helper.md).
+Version 0.5.0 adds diff-aware mutation selection and schema-4 reports and updates the lexer/parser dependency family for the latest stable MoonBit toolchain. Both the Mooncakes package and [v0.5.0 native release assets](https://github.com/gpui-mbt/turtles.mbt/releases/tag/v0.5.0) are published. A checkout-free registry installation of 0.5.0 has been verified on Linux with Python blocked, including native and JavaScript target mutation runs.
+
+Historical 0.4.7 consumer CI independently tests registry installation and checksum-verified native assets on Linux x86_64, macOS Apple Silicon, and Windows x86_64 with its compatible compiler pin. Those historical checks are not a claim that every 0.5.0 consumer path has been exercised. Windows source-package installation also requires an MSVC build environment. The historical Windows consumer CI disables the optional MSVC `vctip.exe` helper for both installation routes in its disposable runners: a fresh, unmodified toolchain can leave the 0.4.7 native-asset CLI waiting after baseline tests pass. Prefer the Mooncakes install route; the cold-start follow-up remains open and is not claimed fixed by 0.5.0: [Windows cold native compiler helper](issues/open/20261014-windows-cold-native-compiler-helper.md).
 
 ### Development — GitHub
 
@@ -28,7 +30,7 @@ Version 0.4.7 fixes the MoonBit 0.1.20261012 compatibility and obsolete dependen
 moon install https://github.com/gpui-mbt/turtles.mbt.git cmd/turtles --branch main
 ```
 
-Install from the matching source tag after it is created:
+Install from the published source tag:
 
 ```sh
 moon install https://github.com/gpui-mbt/turtles.mbt.git cmd/turtles --tag v0.5.0
@@ -52,7 +54,7 @@ turtles --dir .            # or: turtles --list to preview the mutation set
 
 Every mutant runs in its own temporary workspace; on a small module the whole run takes seconds.
 
-The examples below describe the 0.5.0 source release: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. Source CI and future release builds follow the latest stable MoonBit compiler/core. Version 0.5.0 updates the lexer/parser dependency family and has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. The already published 0.4.7 registry package still requires the older `0.10.16+b1a0e846e` toolchain; its checkout-free historical-release CI intentionally retains that pin. After 0.5.0 is published, install it with `moon install f4ah6o/turtles/cmd/turtles@0.5.0` using the latest stable toolchain. The stable-install commands above continue to identify the already published 0.4.7 artifacts until publication is verified.
+The examples below describe the published 0.5.0 release, including `--in-diff` and schema 4. Source CI and release builds follow the latest stable MoonBit compiler/core; 0.5.0 has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. When upgrading from 0.4.7, update the toolchain and regenerate reports: `--iterate` does not reuse schema-3 verdicts. The checkout-free CI for historical 0.4.7 still uses MoonBit `0.10.16+b1a0e846e`.
 
 ## Typical local usage
 
@@ -91,7 +93,7 @@ Note that `moon` itself already parallelizes a single build; `--jobs` paralleliz
 Install a pinned release and run turtles against your module:
 
 ```sh
-moon install f4ah6o/turtles/cmd/turtles@0.4.7
+moon install f4ah6o/turtles/cmd/turtles@0.5.0
 turtles --dir . --fail-under 80 --json turtles-report.json
 ```
 
