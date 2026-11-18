@@ -201,7 +201,9 @@ fn diff_binary_header_matches(
   expected_old : String,
   expected_new : String,
 ) -> Bool {
-  if !diff_starts(line, b"Binary files ") || !diff_ends(line, b" differ") {
+  if line.length() < 20 ||
+    !diff_starts(line, b"Binary files ") ||
+    !diff_ends(line, b" differ") {
     return false
   }
   let body = line[13:line.length() - 7].to_owned()
@@ -307,7 +309,21 @@ fn parse_git_diff_section(
       fail("missing Git new-side header")
     }
     let new_raw = diff_header_path(lines[i][4:].to_owned())
-    let normalized = diff_normalize_paths(old_raw, new_raw)
+    // One-sided paths may begin with literal a/ or b/ directories in a
+    // --no-prefix patch. Let the Git pair prove that spelling before stripping.
+    let raw_matches = if old_raw == "/dev/null" || new_raw == "/dev/null" {
+      (Some(diff_git_header_paths(git_paths, Some(old_raw), Some(new_raw))) catch {
+        _ => None
+      })
+      is Some(_)
+    } else {
+      false
+    }
+    let normalized = if raw_matches {
+      (old_raw, new_raw)
+    } else {
+      diff_normalize_paths(old_raw, new_raw)
+    }
     old_path = normalized.0
     new_path = normalized.1
     ignore(diff_git_header_paths(git_paths, Some(old_path), Some(new_path)))
@@ -351,6 +367,7 @@ fn parse_git_diff_section(
   }
   let hunks : Array[DiffHunk] = []
   while i < lines.length() && diff_starts(lines[i], b"@@ ") {
+    guard has_headers else { fail("Git text hunk lacks file headers") }
     let (hunk, next) = parse_diff_hunk(lines, i, hunks.length() + 1) catch {
       error => fail("\{new_path}: hunk \{hunks.length() + 1}: \{error}")
     }
