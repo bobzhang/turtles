@@ -3,7 +3,7 @@
 /// bytes the configuration parser treats specially.
 fn qc_quote_bytes(value : String) -> Bytes {
   let bytes = @utf8.encode(value)
-  let out = @buffer.Buffer(size_hint=bytes.length() + 8)
+  let out = @buffer.Buffer(capacity=bytes.length() + 8)
   out.write_byte(b'"')
   for byte in bytes {
     match byte {

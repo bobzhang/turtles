@@ -52,7 +52,7 @@ turtles --dir .            # or: turtles --list to preview the mutation set
 
 Every mutant runs in its own temporary workspace; on a small module the whole run takes seconds.
 
-The examples below describe the unreleased development version: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. CI and release builds use MoonBit compiler/core `0.10.16+b1a0e846e`; newer toolchains can fail to build the pinned lexer dependency until it is updated.
+The examples below describe the unreleased development version: `--in-diff` and schema 4 are not present in the published 0.4.7 release, which emits schema 3. Source CI and future release builds follow the latest stable MoonBit compiler/core. This branch updates the lexer/parser dependency family and has been checked with `moon 0.1.20261117` / `moonc 0.10.21+06da1ed44`. The already published 0.4.7 registry package still requires the older `0.10.16+b1a0e846e` toolchain; its checkout-free historical-release CI intentionally retains that pin until a compatible version is published.
 
 ## Typical local usage
 

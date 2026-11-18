@@ -11,7 +11,7 @@
 
 ### Changed
 
-- CI and release jobs use the tested MoonBit 0.10.16 compiler and core, avoiding upstream formatter and lexer incompatibilities in newer floating toolchains.
+- Source CI and future release builds follow the latest stable MoonBit toolchain. Update lexer to 0.4.5, parser to 0.4.9, moon_config to 0.4.6 and prettyprinter to 0.4.12; migrate manifest AST handling, formatting and deprecated APIs. Historical published-0.4.7 consumer checks retain their compatible toolchain pin.
 
 - An unset operator list now resolves through an exhaustive `operator_group_default_enabled`, so a new group is opt-in by explicit decision instead of by falling through a "not `Body`" test. Behavior is unchanged: `comparison`, `boolean`, `arithmetic`, `literal`, and `condition` run by default.
 

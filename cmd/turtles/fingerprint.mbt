@@ -12,7 +12,7 @@ fn fnv1a(bytes : Bytes) -> UInt64 {
 ///|
 fn fingerprint_hex(hash : UInt64) -> String {
   let digits = b"0123456789abcdef"
-  let output = StringBuilder(size_hint=16)
+  let output = StringBuilder(capacity=16)
   let mut shift = 60
   while shift >= 0 {
     let nibble = ((hash >> shift) & 0xFUL).to_int()

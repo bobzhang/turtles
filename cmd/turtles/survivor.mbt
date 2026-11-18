@@ -720,43 +720,43 @@ fn pkg_text_import_entries(
   text : String,
   scope : String,
 ) -> Array[(String, String?)] {
-  let (ast, reports) = @moon_config.parse_moon_pkg(text)
-  if !reports.is_empty() {
+  let result = @moon_config.parse_moon_pkg(text)
+  if !result.diagnostics.errors.is_empty() ||
+    !result.diagnostics.warnings.is_empty() {
     return []
   }
-  guard ast is @moon_config.Ast::Obj(fields, ..) else { return [] }
   let entries : Array[(String, String?)] = []
-  for field in fields {
-    let (key, value) = field
-    if key != "import" && (scope == "source" || key != "\{scope}-import") {
+  let seen : Map[String, Bool] = Map([])
+  for statement in result.ast.0 {
+    guard statement
+      is @moon_config.Statement::Import(items~, kind~, conditions~, ..) else {
       continue
     }
-    guard value is @moon_config.Ast::Arr(items, ..) else { continue }
+    // This analysis has no target-condition context. Do not grant a pure
+    // import identity that may be absent or shadowed on the selected target.
+    if !conditions.is_empty() {
+      return []
+    }
+    let key = match kind {
+      Normal => "source"
+      Test => "test"
+      Wbtest => "wbtest"
+    }
+    // The new parser permits repeated blocks. Preserve our prior fail-closed
+    // behavior rather than silently changing alias resolution during upgrade.
+    if seen.contains(key) {
+      return []
+    }
+    seen[key] = true
+    if key != "source" && key != scope {
+      continue
+    }
     for item in items {
-      match item {
-        @moon_config.Ast::Str(path, ..) => entries.push((path, None))
-        @moon_config.Ast::Obj(props, ..) => {
-          let mut path : String? = None
-          let mut import_alias : String? = None
-          for prop in props {
-            let (name, value) = prop
-            match value {
-              @moon_config.Ast::Str(text, ..) =>
-                if name == "path" {
-                  path = Some(text)
-                } else if name == "alias" {
-                  import_alias = Some(text)
-                }
-              _ => ()
-            }
-          }
-          match path {
-            Some(path) => entries.push((path, import_alias))
-            None => ()
-          }
-        }
-        _ => ()
+      let alias_ = match item.alias_ {
+        Some((name, _)) => Some(name)
+        None => None
       }
+      entries.push((item.path, alias_))
     }
   }
   entries
@@ -1283,6 +1283,7 @@ fn enclosing_fn(index : ModuleIndex, mutation : Mutation) -> FnInfo? {
 
 ///|
 /// Skip reasons the witness reports on the survivor row.
+#derive(Eq)
 enum WitnessSkip {
   EffectsUnknown
   Recursive
@@ -1290,7 +1291,7 @@ enum WitnessSkip {
   NameCollision
   Nondeterministic
   HarnessError
-} derive(Eq)
+}
 
 ///|
 fn witness_skip_name(skip : WitnessSkip) -> String {

@@ -613,8 +613,9 @@ test "manifest comments and spaced scopes do not grant import identity" {
     #|import { "unrelated/math", }
     #|// import { "moonbitlang/core/quickcheck" @qc, } for "test"
     #|import { "moonbitlang/core/quickcheck" @qc, "unrelated/other" @other, } for    "test"
-  let (_, reports) = @moon_config.parse_moon_pkg(source)
-  assert_eq(reports.map(r => r.msg), [])
+  let result = @moon_config.parse_moon_pkg(source)
+  assert_eq(result.diagnostics.errors.map(r => r.msg), [])
+  assert_eq(result.diagnostics.warnings.map(r => r.msg), [])
   assert_eq(pkg_text_import_entries(source, "source"), [
     ("unrelated/math", None),
   ])
@@ -629,4 +630,16 @@ test "manifest comments and spaced scopes do not grant import identity" {
 test "malformed duplicate scope imports grant no analysis permissions" {
   let source = "import { \"moonbitlang/core/quickcheck\", } for \"test\"\nimport { \"unrelated/pkg\", } for \"test\"\n"
   assert_true(pkg_text_import_entries(source, "test").is_empty())
+}
+
+///|
+test "conditional or malformed manifest imports grant no analysis permissions" {
+  for
+    source in [
+      "#cfg(target = \"js\")\nimport { \"moonbitlang/core/math\", }\n", "import { \"moonbitlang/core/math\", }\n#cfg(false)\nimport { \"unrelated/math\", }\n",
+      "import { \"moonbitlang/core/math\", ",
+    ] {
+    assert_true(pkg_text_import_entries(source, "source").is_empty())
+    assert_true(pkg_text_import_entries(source, "test").is_empty())
+  }
 }

@@ -9,7 +9,7 @@ async fn execute() -> Int32 {
 /// refuse to reuse verdicts produced by a different toolchain.
 async fn capture_moon_version() -> String? {
   let tmp = @fs.tmpdir(prefix="turtles-version")
-  defer (force_rmdir(tmp) catch { _ => () })
+  defer @async.protect_from_cancel(() => force_rmdir(tmp) catch { _ => () })
   let log = path_join(tmp, "moon-version.log")
   let output = @process.redirect_to_file(log)
   let code = @process.run("moon", ["--version"], stdout=output, stderr=output) catch {
@@ -130,7 +130,7 @@ async fn print_mutation_list(
     (mutations, [])
   } else {
     let temp = @fs.tmpdir(prefix="turtles-list")
-    defer (force_rmdir(temp) catch { _ => () })
+    defer @async.protect_from_cancel(() => force_rmdir(temp) catch { _ => () })
     let reference = path_join(temp, "reference")
     @fs.mkdir(reference, recursive=true)
     copy_tree(root, root, reference)
