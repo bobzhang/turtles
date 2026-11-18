@@ -161,3 +161,32 @@ test "overlapping binary summary markers are rejected without slicing abort" {
     (Some(parse_diff_sections(malformed)) catch { _ => None }) is None,
   )
 }
+
+///|
+test "Git 100 percent rename similarity permits reordered text hunks" {
+  let patch = b"diff --git a/old.mbt b/new.mbt\nsimilarity index 100%\nrename from old.mbt\nrename to new.mbt\nindex 1234567..abcdef0 100644\n--- a/old.mbt\n+++ b/new.mbt\n@@ -1,2 +1,2 @@\n-one\n two\n+one\n"
+  let sections = parse_diff_sections(patch)
+  assert_eq(sections[0].new_path, "new.mbt")
+  let ranges = validate_diff_hunks("patch", "new.mbt", b"two\none\n", sections[0].hunks)
+  assert_eq(ranges.length(), 1)
+  assert_eq((ranges[0].start, ranges[0].end), (4, 8))
+}
+
+///|
+test "prefixless rename and binary addition retain a and b directories" {
+  for patch in [
+    b"diff --git a/file.mbt b/file.mbt\nsimilarity index 100%\nrename from a/file.mbt\nrename to b/file.mbt\n",
+    b"diff --git a/file.mbt b/file.mbt\nsimilarity index 80%\nrename from a/file.mbt\nrename to b/file.mbt\nindex 1234567..abcdef0 100644\n--- a/file.mbt\n+++ b/file.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+    b"diff --git a/a/file.mbt b/b/file.mbt\nsimilarity index 80%\nrename from a/file.mbt\nrename to b/file.mbt\nindex 1234567..abcdef0 100644\n--- a/a/file.mbt\n+++ b/b/file.mbt\n@@ -1 +1 @@\n-old\n+new\n",
+  ] {
+    let sections = parse_diff_sections(patch)
+    assert_eq((sections[0].old_path, sections[0].new_path), ("a/file.mbt", "b/file.mbt"))
+  }
+  let binary = b"diff --git b/image.bin b/image.bin\nnew file mode 100644\nindex 0000000..abcdef0\nBinary files /dev/null and b/image.bin differ\n"
+  let sections = parse_diff_sections(binary)
+  assert_true(sections[0].binary)
+  assert_eq((sections[0].old_path, sections[0].new_path), ("/dev/null", "b/image.bin"))
+  let prefixed = b"diff --git a/b/image.bin b/b/image.bin\nnew file mode 100644\nindex 0000000..abcdef0\nBinary files /dev/null and b/b/image.bin differ\n"
+  let prefixed_sections = parse_diff_sections(prefixed)
+  assert_eq(prefixed_sections[0].new_path, "b/image.bin")
+}

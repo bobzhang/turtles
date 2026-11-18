@@ -223,20 +223,31 @@ fn diff_git_header_paths(
     let normalized = Some(diff_normalize_paths(raw_old, raw_new)) catch {
       _ => None
     }
-    guard normalized is Some((old_path, new_path)) else { continue }
-    let matches = match (old_hint, new_hint) {
-      (Some("/dev/null"), Some(expected)) =>
-        old_path == expected && new_path == expected
-      (Some(expected), Some("/dev/null")) =>
-        old_path == expected && new_path == expected
-      (Some(old_expected), Some(new_expected)) =>
-        old_path == old_expected && new_path == new_expected
-      (None, None) => old_path == new_path
-      _ => false
+    guard normalized is Some(normalized_paths) else { continue }
+    let interpretations = [normalized_paths]
+    // Rename/file metadata can prove that a/ and b/ are literal directories.
+    // Without hints retain conventional Git prefix handling.
+    if old_hint is Some(_) && new_hint is Some(_) &&
+      normalized_paths != (raw_old, raw_new) {
+      interpretations.push((raw_old, raw_new))
     }
-    if matches {
-      guard candidate is None else { fail("ambiguous Git diff header paths") }
-      candidate = Some((old_path, new_path))
+    for (old_path, new_path) in interpretations {
+      let matches = match (old_hint, new_hint) {
+        (Some("/dev/null"), Some(expected)) =>
+          old_path == expected && new_path == expected
+        (Some(expected), Some("/dev/null")) =>
+          old_path == expected && new_path == expected
+        (Some(old_expected), Some(new_expected)) =>
+          old_path == old_expected && new_path == new_expected
+        (None, None) => old_path == new_path
+        _ => false
+      }
+      if matches {
+        guard candidate is None else {
+          fail("ambiguous Git diff header paths")
+        }
+        candidate = Some((old_path, new_path))
+      }
     }
   }
   guard candidate is Some(paths) else {
