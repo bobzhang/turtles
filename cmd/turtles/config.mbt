@@ -1,6 +1,6 @@
 ///|
 /// Keep in sync with `version` in the module's moon.mod; a test guards it.
-let turtles_version : String = "0.5.0"
+let turtles_version : String = "0.5.1"
 
 ///|
 fn print_help() -> Unit {
