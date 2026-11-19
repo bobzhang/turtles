@@ -16,6 +16,12 @@
 
 ### Migration
 
+## 0.5.1 - 2026-11-19
+
+### Changed
+
+- Update moonbitlang/async to 0.22.10 and moonbitlang/x to 0.5.7 in the root module; bump the async pin in the isolation and timeout fixtures to match. `moon fix` reports no source migrations needed under the latest stable toolchain.
+
 ## 0.5.0 - 2026-11-18
 
 ### Added
