@@ -105,6 +105,24 @@ test "Darwin process-group supervisor preserves child exit status" {
       ),
       7,
     )
+    // Moon reports this failure with exit(-1). Darwin waitid can expose
+    // extra high bits, but the POSIX child exit status is 255.
+    assert_eq(
+      turtles_darwin_supervise(
+        3000,
+        encode_supervisor_argv(["moon", "-C", "/dev/null", "check"]),
+      ),
+      255,
+    )
+    for code in [127, 128, 254, 255] {
+      assert_eq(
+        turtles_darwin_supervise(
+          3000,
+          encode_supervisor_argv(["/bin/sh", "-c", "exit \{code}"]),
+        ),
+        code,
+      )
+    }
   }
 }
 

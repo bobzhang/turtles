@@ -1,4 +1,4 @@
-///|
+----
 import {
   "moonbitlang/core/env",
   "moonbitlang/core/json",
@@ -7,6 +7,7 @@ import {
   "moonbitlang/async@0.22.4/process",
   "moonbitlang/x@0.5.5/path",
 }
+----
 
 ///|
 /// End-to-end checks for validated diff selection. Run from the module root:

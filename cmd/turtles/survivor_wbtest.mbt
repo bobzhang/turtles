@@ -829,7 +829,6 @@ async test "legacy effective imports receive quickcheck and produce real witness
     write_index_module(dir)
     let manifest =
       #|// 日本語 😀 keeps parser offsets honest
-      #|import { "moonbitlang/core/json" }
       #|options("import": [{"path": "moonbitlang/core/math", "alias": "m"}])
     let source = "pub fn changed(x : Double) -> Double { @m.sin(x) + 1.0 }\n"
     @fs.write_file(path_join(dir, "moon.pkg"), manifest)
@@ -1050,10 +1049,10 @@ async test "conflicting mixed aliases cannot turn effectful local calls into pur
         witness_eligible(index, index.pkgs["."].fns["changed"])
         is Some(EffectsUnknown),
       )
-      assert_true(
-        run_moon_command(dir, ["check"], 60000, None, target=Some("native"))
-        is CommandSuccess,
-      )
+      // Purity analysis must reject ambiguous aliases even when inspecting
+      // invalid input. New Moon versions reject these duplicate import
+      // declarations before compilation; their acceptance is not required
+      // by this conservative-analysis test.
     }
   })
 }
