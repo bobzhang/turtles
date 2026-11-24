@@ -145,7 +145,7 @@ async fn read_diff_limited(path : String, limit : Int32) -> Bytes {
         guard bytes.length() <= limit - output.length() else {
           fail("diff \{path} exceeds size limit")
         }
-        output.write_bytes(bytes)
+        output.write_bytesview(bytes)
       }
     }
   }

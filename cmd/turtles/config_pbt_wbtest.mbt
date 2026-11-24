@@ -29,7 +29,7 @@ fn qc_config_bytes(values : Array[String]) -> Bytes {
       if i > 0 {
         out.write_string_utf8(", ")
       }
-      out.write_bytes(qc_quote_bytes(value))
+      out.write_bytesview(qc_quote_bytes(value))
     }
     out.write_string_utf8("]\n")
   }
