@@ -6,14 +6,18 @@ on:
 
 jobs:
   moonbit:
+    strategy:
+      fail-fast: false
+      matrix:
+        moonbit: [latest, pre-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install latest stable MoonBit toolchain
+      - name: Install rolling MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 'latest'
-          core-version: 'latest'
+          version: ${{ matrix.moonbit }}
+          core-version: ${{ matrix.moonbit }}
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -410,17 +414,21 @@ jobs:
         run: sh scripts/self_e2e.sh
 
   macos-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        moonbit: [latest, pre-release]
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: Verify Apple Silicon runner
         run: test "$(uname -m)" = arm64
-      - name: Install latest stable MoonBit toolchain
+      - name: Install rolling MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 'latest'
-          core-version: 'latest'
+          version: ${{ matrix.moonbit }}
+          core-version: ${{ matrix.moonbit }}
       - name: Update dependencies
         run: moon update
       - name: Check formatting
@@ -473,14 +481,18 @@ jobs:
         run: python3 scripts/darwin_timeout_smoke.py
 
   windows-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        moonbit: [latest, pre-release]
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
       - uses: ilammy/msvc-dev-cmd@v1
       - uses: hustcer/setup-moonbit@v1
         with:
-          version: 'latest'
-          core-version: 'latest'
+          version: ${{ matrix.moonbit }}
+          core-version: ${{ matrix.moonbit }}
       - name: Record resolved toolchain
         run: moon version --all
       - name: Resolve dependencies
@@ -501,14 +513,18 @@ jobs:
         run: python scripts/windows_smoke.py
 
   mbtx-validator:
+    strategy:
+      fail-fast: false
+      matrix:
+        moonbit: [latest, pre-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install latest stable MoonBit toolchain
+      - name: Install rolling MoonBit toolchain
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 'latest'
-          core-version: 'latest'
+          version: ${{ matrix.moonbit }}
+          core-version: ${{ matrix.moonbit }}
       - name: Update MoonBit registry
         run: moon update
       - name: Check standalone MoonBit validator formatting

@@ -374,11 +374,13 @@ static int turtles_darwin_reap(pid_t child, int *status) {
   }
 }
 
-static int turtles_darwin_status_from_siginfo(const siginfo_t *status) {
-  if (status->si_code == CLD_EXITED)
-    return status->si_status;
-  if (status->si_code == CLD_KILLED || status->si_code == CLD_DUMPED)
-    return 128 + status->si_status;
+static int turtles_darwin_status_from_wait(int status) {
+  /* waitid can expose more than the low eight bits of an exit argument on
+     Darwin (for example exit(-1)). Use the reaped POSIX wait status. */
+  if (WIFEXITED(status))
+    return WEXITSTATUS(status);
+  if (WIFSIGNALED(status))
+    return 128 + WTERMSIG(status);
   return 255;
 }
 
@@ -648,7 +650,7 @@ static int turtles_darwin_supervise_command(int32_t timeout_ms, char **argv) {
         goto child_cleanup;
       }
       child_reaped = true;
-      result = turtles_darwin_status_from_siginfo(&child_info);
+      result = turtles_darwin_status_from_wait(child_status);
       goto cleanup;
     }
     if (turtles_darwin_interrupted != 0) {
