@@ -1,3 +1,4 @@
+----
 ///|
 /// Validates the report produced by
 /// `turtles --dir fixtures/boundary --operators boundary`.
@@ -14,6 +15,7 @@ import {
   "moonbitlang/async@0.22.4",
   "moonbitlang/async@0.22.4/fs",
 }
+----
 
 ///|
 /// The four boundary edits, paired with the verdict the fixture's tests must
