@@ -735,9 +735,9 @@ fn apply_mutation(source : String, mutation : Mutation) -> String raise {
   let output = @buffer.Buffer(
     capacity=bytes.length() + mutation.replacement.length(),
   )
-  output.write_bytes(bytes[:mutation.start])
+  output.write_bytesview(bytes[:mutation.start])
   output.write_string_utf8(mutation.replacement)
-  output.write_bytes(bytes[mutation.end:])
+  output.write_bytesview(bytes[mutation.end:])
   @utf8.decode(output.to_bytes())
 }
 

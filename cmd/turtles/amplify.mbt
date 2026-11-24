@@ -238,11 +238,11 @@ fn amplify_rewrite_file(
     if start < cursor || start > end || end > bytes.length() {
       return None
     }
-    buf.write_bytes(bytes[cursor:start])
+    buf.write_bytesview(bytes[cursor:start])
     buf.write_string_utf8(text)
     cursor = end
   }
-  buf.write_bytes(bytes[cursor:])
+  buf.write_bytesview(bytes[cursor:])
   Some(@utf8.decode_lossy(buf.to_bytes()))
 }
 

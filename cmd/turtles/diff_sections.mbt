@@ -145,7 +145,7 @@ fn parse_diff_sections(raw : Bytes) -> Array[DiffSection] raise {
     } else if diff_starts(lines[i], b"--- ") {
       let raw_sections = @buffer.Buffer()
       while i < lines.length() && !diff_starts(lines[i], b"diff --git ") {
-        raw_sections.write_bytes(lines[i])
+        raw_sections.write_bytesview(lines[i])
         raw_sections.write_byte(b'\n')
         i = i + 1
       }
