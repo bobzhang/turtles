@@ -51,6 +51,7 @@ async test "execute_with_config lists mutations or runs the pipeline" {
       emit_properties: false,
       pbt_witness: false,
       pbt_amplify: None,
+      schemata: false,
     }
     let listed = execute_with_config({ ..base, list: true, })
     inspect(listed, content="0")

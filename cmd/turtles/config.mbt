@@ -29,6 +29,8 @@ fn print_help() -> Unit {
       #|      --emit-properties   Write property-test suggestions for survivors
       #|      --pbt-witness       Differential QuickCheck witness for survivors
       #|      --pbt-amplify <N>   Re-run survivor properties with N x count and fresh seeds
+      #|      --schemata          Experimental: build all mutants once, select at
+      #|                        runtime via TURTLES_MUTANT (no rebuild per mutant)
       #|      --list              List mutations without running tests
       #|      --version           Print the turtles version and exit
       #|  -h, --help              Print help
@@ -56,6 +58,7 @@ fn parse_args(args : Array[String]) -> Config raise {
   let mut emit_properties = false
   let mut pbt_witness = false
   let mut pbt_amplify : Int32? = None
+  let mut schemata = false
   let mut i = 1
   // Every iteration must consume at least one argument, so the loop can run
   // at most args.length() times; more steps means the cursor went backwards.
@@ -192,6 +195,7 @@ fn parse_args(args : Array[String]) -> Config raise {
         timeout_multiplier = Some(factor)
       }
       "--list" => list = true
+      "--schemata" => schemata = true
       other => fail("unknown argument: \{other} (try --help)")
     }
     i = i + 1
@@ -219,6 +223,7 @@ fn parse_args(args : Array[String]) -> Config raise {
     emit_properties,
     pbt_witness,
     pbt_amplify,
+    schemata,
   }
 }
 

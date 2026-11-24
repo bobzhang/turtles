@@ -88,6 +88,31 @@ turtles --dir . --jobs 4
 
 Note that `moon` itself already parallelizes a single build; `--jobs` parallelizes *across mutants*, so values above ~2× your CPU count only add contention.
 
+### Mutant schemata (experimental)
+
+```sh
+turtles --dir . --schemata --jobs 8
+```
+
+By default every mutant costs its own `moon check` + rebuild + `moon test`. `--schemata` compiles **all** mutants into one program and picks the active one at runtime through the `TURTLES_MUTANT` environment variable, so each mutant is just a `moon test` against a tree that is already built:
+
+```moonbit
+a < b       // -> turtles_op_lt_gt_le(a, b, 17, 18)          generic helper, T : Compare
+x && y      // -> ({ let turtles_l = (x); if turtles_l == (turtles_active() == 3) { turtles_l } else { (y) } })
+if c { .. } // -> if (match turtles_active() { 5 => true; 6 => false; _ => (c) }) { .. }
+```
+
+Each operand appears exactly once, so nested sites never blow up the source and evaluation order (including `&&`/`||` short-circuiting) is preserved. A generated `turtles_schemata_generated.mbt` per package reads the variable through raw per-backend FFI (wasm, wasm-gc, js, native/llvm) without calling library code, so it works inside `moonbitlang/core/builtin` itself.
+
+The pipeline:
+
+1. Instrument every selected mutant, then `moon check --output-json`. Each error is attributed to the innermost site containing it (e.g. `+ -> -` on `String`, a literal inside `const`), that site is dropped, and the check repeats until the tree compiles.
+2. Run the test suite once with `TURTLES_MUTANT=0` (the original program). Packages whose tests fail there are dropped from instrumentation.
+3. Each worker copies the instrumented tree, builds once with `moon test --build-only`, then runs every compiled-in mutant as `moon test` with `TURTLES_MUTANT=<id>`.
+4. Dropped sites, `x is P` conditions and operands (their binders cannot be wrapped), and `--iterate` reuses take the classic per-mutant path. Verdicts therefore keep the classic meaning: an UNVIABLE mutant is still reported UNVIABLE.
+
+Known differences from classic runs: the helper calls change code shape, so **non-terminating** mutants can manifest differently. In `fixtures/pbt`, `down(n - 1) + 0 -> down(n + 1) + 0` is SURVIVED classically (the `+ 0` lets the compiler turn the recursion into a loop that eventually wraps around) but KILLED by stack overflow under schemata. Terminating mutants classified identically across the `basic`, `body`, `boundary`, `isolation`, `targets` and `timeout` fixtures. Windows falls back to classic. Set `TURTLES_SCHEMATA_DEBUG=1` to print each check diagnostic that caused a site to fall back.
+
 ## CI usage
 
 Install a pinned release and run turtles against your module:

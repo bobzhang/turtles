@@ -126,6 +126,7 @@ async fn run_moon_command(
   timeout_ms : Int32,
   timeout_command : String?,
   target~ : String? = None,
+  env~ : Map[String, String] = Map([]),
 ) -> CommandResult {
   let command_args = moon_args(args, target)
   // Nested moon output must not reach our own stdout: when turtles runs
@@ -148,6 +149,7 @@ async fn run_moon_command(
       @process.run(
         timeout_executable,
         wrapped,
+        extra_env=env,
         cwd=root,
         stdout=output,
         stderr=output,
@@ -186,6 +188,7 @@ async fn run_moon_command(
       @process.run(
         executable,
         supervisor_args,
+        extra_env=env,
         cwd=root,
         stdout=output,
         stderr=output,
@@ -199,6 +202,7 @@ async fn run_moon_command(
     @process.run(
       "moon",
       command_args,
+      extra_env=env,
       cwd=root,
       stdout=output,
       stderr=output,
@@ -420,7 +424,11 @@ async fn run_moon_command(
   timeout_ms : Int32,
   _timeout_command : String?,
   target~ : String? = None,
+  // Windows spawns through a job object without per-process env;
+  // --schemata is disabled there, so no caller passes one.
+  env~ : Map[String, String] = Map([]),
 ) -> CommandResult {
+  ignore(env)
   let command_args = moon_args(args, target)
   let process = windows_spawn_scoped_process(
     windows_moon_command_line(command_args),
@@ -834,6 +842,7 @@ async fn run_mutations(
   emit_properties~ : Bool = false,
   pbt_witness~ : Bool = false,
   pbt_amplify~ : Int32? = None,
+  schemata~ : Bool = false,
   output_dir~ : String = "",
   diff_snapshots~ : Map[String, Bytes]? = None,
   expected_files~ : Map[String, String]? = None,
@@ -977,9 +986,32 @@ async fn run_mutations(
         target~,
       )
     }
-    let results = run_mutation_pool(
-      temp, reference, active_mutations, jobs, active_reuse, classify,
-    )
+    let results = if schemata && schemata_supported() {
+      run_schemata(
+        temp,
+        reference,
+        active_mutations,
+        active_reuse,
+        jobs,
+        plan,
+        timeout_ms,
+        timeout_multiplier,
+        baseline_check_ms,
+        baseline_test_ms,
+        timeout_command,
+        classify,
+        target~,
+      )
+    } else {
+      if schemata {
+        println(
+          "warning: --schemata is not supported on Windows; running classic",
+        )
+      }
+      run_mutation_pool(
+        temp, reference, active_mutations, jobs, active_reuse, classify,
+      )
+    }
     // Survivor analyses run after classification, in the issue's fixed
     // order: amplify first (it can still kill), witness and suggestions
     // see only the final survivors. Everything goes through `moon_args`

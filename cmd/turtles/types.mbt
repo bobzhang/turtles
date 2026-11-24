@@ -124,6 +124,7 @@ struct Config {
   emit_properties : Bool
   pbt_witness : Bool
   pbt_amplify : Int32?
+  schemata : Bool
 }
 
 ///|

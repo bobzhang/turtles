@@ -345,6 +345,7 @@ async fn execute_with_config(config : Config) -> Int32 {
     emit_properties=config.emit_properties,
     pbt_witness=config.pbt_witness,
     pbt_amplify=config.pbt_amplify,
+    schemata=config.schemata,
     output_dir~,
     diff_snapshots=snapshots,
     expected_files=if diff_metadata is Some(_) { Some(files) } else { None },
