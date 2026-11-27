@@ -19,6 +19,6 @@ import {
   "moonbitlang/lexer@0.4.5",
   "moonbitlang/parser@0.4.9",
   "moonbitlang/moon_config@0.4.6",
-  "moonbitlang/x@0.5.7",
+  "moonbitlang/x@0.5.9",
   "moonbit-community/prettyprinter@0.4.12",
 }
