@@ -516,5 +516,5 @@ async fn main {
       2
     }
   }
-  @sys.exit(exit_code)
+  @env.exit(exit_code)
 }

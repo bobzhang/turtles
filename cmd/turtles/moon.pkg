@@ -18,7 +18,6 @@ import {
   "moonbitlang/parser/attribute",
   "moonbitlang/parser/syntax",
   "moonbitlang/x/path",
-  "moonbitlang/x/sys",
 }
 
 import {

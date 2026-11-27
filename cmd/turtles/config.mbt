@@ -69,11 +69,11 @@ fn parse_args(args : Array[String]) -> Config raise {
     match arg {
       "-h" | "--help" => {
         print_help()
-        @sys.exit(0)
+        @env.exit(0)
       }
       "--version" => {
         println("turtles \{turtles_version}")
-        @sys.exit(0)
+        @env.exit(0)
       }
       "-d" | "--dir" => {
         guard i + 1 < args.length() else { fail("--dir requires a path") }
